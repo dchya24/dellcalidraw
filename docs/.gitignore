@@ -1,0 +1,15 @@
+# ====================
+# Documentation
+# ====================
+
+# Draft notes
+*.draft.md
+TODO.md
+WIP.md
+
+# Temporary documentation
+temp/
+tmp/
+
+# Generated docs (if any)
+generated/

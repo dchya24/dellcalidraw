@@ -1,0 +1,110 @@
+# ====================
+# Root .gitignore for Excalidraw Project
+# ====================
+
+# ====================
+# Environment & Secrets
+# ====================
+.env
+.env.local
+.env.*.local
+*.env
+.env.example
+
+# ====================
+# Dependencies
+# ====================
+node_modules/
+.pnp
+.pnp.js
+
+# ====================
+# Build Outputs
+# ====================
+dist/
+dist-ssr/
+build/
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+server
+
+# ====================
+# Testing & Coverage
+# ====================
+coverage/
+*.test
+coverage.out
+coverage.html
+.nyc_output/
+
+# ====================
+# Logs
+# ====================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ====================
+# IDE & Editors
+# ====================
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+.DS_Store
+Thumbs.db
+
+# ====================
+# Go Specific
+# ====================
+go.work
+.air.toml
+tmp/
+
+# ====================
+# OS Specific
+# ====================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ====================
+# Temporary Files
+# ====================
+*.tmp
+*.temp
+*.local
+.cache/
+
+# ====================
+# Package Manager
+# ====================
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+go.sum
+
+# ====================
+# Misc
+# ====================
+.npm
+.eslintcache
+.prettierignore

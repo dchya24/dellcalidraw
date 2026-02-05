@@ -196,6 +196,13 @@ class RoomService {
   }
 
   private getDefaultWsUrl(): string {
+    // Check for environment variable first
+    const envWsUrl = import.meta.env.VITE_WS_URL;
+    if (envWsUrl) {
+      return envWsUrl;
+    }
+
+    // Fallback to dynamic URL based on current location
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname;
     return `${protocol}//${host}:8080/ws`;

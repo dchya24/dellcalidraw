@@ -15,7 +15,7 @@ class RoomService {
   private userJoinedListeners: Set<(payload: UserJoinedPayload) => void> = new Set();
   private userLeftListeners: Set<(payload: UserLeftPayload) => void> = new Set();
   private connectionChangeListeners: Set<(connected: boolean) => void> = new Set();
-  private unloadHandler: ((this: Window, ev: Event) => any) | undefined;
+  private unloadHandler: ((this: Window, ev: Event) => unknown) | undefined;
 
   async joinRoom(roomId: string, username: string, config?: RoomServiceConfig): Promise<void> {
     if (this.currentRoomId === roomId && this.isConnected) {

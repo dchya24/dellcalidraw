@@ -1,6 +1,6 @@
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
 import { useThemeStore } from "../store/useThemeStore";
-import { FileText, Clock, Hash, Plus, FolderOpen, Trash2, Edit2 } from "lucide-react";
+import { FileText, Clock, Plus, FolderOpen, Trash2, Edit2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 interface SidebarProps {

@@ -29,7 +29,8 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
+  const syncStatusRef = useRef<'synced' | 'syncing' | 'error'>('synced'); // Use ref instead of state
+  const [syncStatusTick, setSyncStatusTick] = useState(0); // Force re-render when sync status changes
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
   const { files, activeFileId, getActiveFile, saveTabState, addTab, removeTab, setActiveTab, getActiveTabRoomId } = useWhiteboardStore();
   const { theme, toggleTheme } = useThemeStore();
@@ -350,14 +351,18 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       }
 
       // Send changes to backend for real-time sync
-      setSyncStatus('syncing');
+      syncStatusRef.current = 'syncing';
+      setSyncStatusTick(prev => prev + 1); // Trigger re-render for UI
       elementSyncService.sendChanges(elements);
 
       // Save locally with debouncing
       debouncedSave(activeTabId, elements, appState, files);
 
       // Reset sync status after a short delay
-      setTimeout(() => setSyncStatus('synced'), 300);
+      setTimeout(() => {
+        syncStatusRef.current = 'synced';
+        setSyncStatusTick(prev => prev + 1); // Trigger re-render for UI
+      }, 300);
     },
     [activeTabId, debouncedSave]
   );
@@ -558,13 +563,13 @@ export default function Whiteboard({ username }: WhiteboardProps) {
         {/* Sync status dot */}
         <div className="absolute top-20 right-4 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow-sm">
           <div className={`w-2 h-2 rounded-full ${
-            syncStatus === 'synced' ? 'bg-green-500' :
-            syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' :
+            syncStatusRef.current === 'synced' ? 'bg-green-500' :
+            syncStatusRef.current === 'syncing' ? 'bg-yellow-500 animate-pulse' :
             'bg-red-500'
           }`} />
           <span className="text-xs text-gray-600 dark:text-gray-400">
-            {syncStatus === 'synced' ? 'Synced' :
-             syncStatus === 'syncing' ? 'Syncing...' :
+            {syncStatusRef.current === 'synced' ? 'Synced' :
+             syncStatusRef.current === 'syncing' ? 'Syncing...' :
              'Sync Error'}
           </span>
         </div>

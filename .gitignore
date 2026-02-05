@@ -30,7 +30,6 @@ bin/
 *.dll
 *.so
 *.dylib
-server
 
 # ====================
 # Testing & Coverage

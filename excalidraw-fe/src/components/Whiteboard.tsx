@@ -21,6 +21,7 @@ interface WhiteboardProps {
 
 export default function Whiteboard({ username }: WhiteboardProps) {
   const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const applyingRemoteChangesRef = useRef(false); // Track when applying remote changes to prevent loops
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -277,6 +278,9 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       // Convert backend elements to Excalidraw format
       const elements = payload.elements?.map(backendEl => convertBackendToExcalidraw(backendEl)) || [];
 
+      // Set flag to prevent onChange from syncing these changes back
+      applyingRemoteChangesRef.current = true;
+
       // Update the scene with initial elements
       if (elements.length > 0) {
         api.updateScene({
@@ -284,6 +288,11 @@ export default function Whiteboard({ username }: WhiteboardProps) {
         });
         console.log('✅ Loaded', elements.length, 'elements from room state');
       }
+
+      // Reset flag after update
+      setTimeout(() => {
+        applyingRemoteChangesRef.current = false;
+      }, 0);
 
       // Initialize element sync service with current elements
       elementSyncService.initializeElements(elements);
@@ -332,6 +341,11 @@ export default function Whiteboard({ username }: WhiteboardProps) {
 
   const handleChange = useCallback(
     (elements: readonly OrderedExcalidrawElement[], appState: AppState, files: Record<string, unknown>) => {
+      // Skip sync if we're applying remote changes to prevent infinite loops
+      if (applyingRemoteChangesRef.current) {
+        return;
+      }
+
       // Send changes to backend for real-time sync
       setSyncStatus('syncing');
       elementSyncService.sendChanges(elements);
@@ -384,10 +398,18 @@ export default function Whiteboard({ username }: WhiteboardProps) {
         });
       }
 
+      // Set flag to prevent onChange from syncing these changes back
+      applyingRemoteChangesRef.current = true;
+
       // Update the scene with merged elements
       api.updateScene({
         elements: Array.from(elementMap.values()),
       });
+
+      // Reset flag after update
+      setTimeout(() => {
+        applyingRemoteChangesRef.current = false;
+      }, 0);
 
       // Save to local storage
       // eslint-disable-next-line @typescript-eslint/no-unused-vars

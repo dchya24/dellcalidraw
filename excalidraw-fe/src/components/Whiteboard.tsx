@@ -29,8 +29,6 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const syncStatusRef = useRef<'synced' | 'syncing' | 'error'>('synced'); // Use ref instead of state
-  const [syncStatusTick, setSyncStatusTick] = useState(0); // Force re-render when sync status changes
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
   const { files, activeFileId, getActiveFile, saveTabState, addTab, removeTab, setActiveTab, getActiveTabRoomId } = useWhiteboardStore();
   const { theme, toggleTheme } = useThemeStore();
@@ -351,18 +349,10 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       }
 
       // Send changes to backend for real-time sync
-      syncStatusRef.current = 'syncing';
-      setSyncStatusTick(prev => prev + 1); // Trigger re-render for UI
       elementSyncService.sendChanges(elements);
 
       // Save locally with debouncing
       debouncedSave(activeTabId, elements, appState, files);
-
-      // Reset sync status after a short delay
-      setTimeout(() => {
-        syncStatusRef.current = 'synced';
-        setSyncStatusTick(prev => prev + 1); // Trigger re-render for UI
-      }, 300);
     },
     [activeTabId, debouncedSave]
   );
@@ -559,20 +549,6 @@ export default function Whiteboard({ username }: WhiteboardProps) {
             {conflictWarning}
           </div>
         )}
-
-        {/* Sync status dot */}
-        <div className="absolute top-20 right-4 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow-sm">
-          <div className={`w-2 h-2 rounded-full ${
-            syncStatusRef.current === 'synced' ? 'bg-green-500' :
-            syncStatusRef.current === 'syncing' ? 'bg-yellow-500 animate-pulse' :
-            'bg-red-500'
-          }`} />
-          <span className="text-xs text-gray-600 dark:text-gray-400">
-            {syncStatusRef.current === 'synced' ? 'Synced' :
-             syncStatusRef.current === 'syncing' ? 'Syncing...' :
-             'Sync Error'}
-          </span>
-        </div>
 
         <Excalidraw
           key={`${activeFileId}-${activeTabId}`} // Force re-render when file or tab changes

@@ -22,6 +22,7 @@ interface WhiteboardProps {
 export default function Whiteboard({ username }: WhiteboardProps) {
   const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const applyingRemoteChangesRef = useRef(false); // Track when applying remote changes to prevent loops
+  const isApplyingChangesRef = useRef(false); // Additional lock to prevent race conditions
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -278,8 +279,9 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       // Convert backend elements to Excalidraw format
       const elements = payload.elements?.map(backendEl => convertBackendToExcalidraw(backendEl)) || [];
 
-      // Set flag to prevent onChange from syncing these changes back
+      // Set flags to prevent onChange from syncing these changes back
       applyingRemoteChangesRef.current = true;
+      isApplyingChangesRef.current = true;
 
       // Update the scene with initial elements
       if (elements.length > 0) {
@@ -289,10 +291,11 @@ export default function Whiteboard({ username }: WhiteboardProps) {
         console.log('✅ Loaded', elements.length, 'elements from room state');
       }
 
-      // Reset flag after update
-      setTimeout(() => {
+      // Reset flags after updateScene completes
+      requestAnimationFrame(() => {
         applyingRemoteChangesRef.current = false;
-      }, 0);
+        isApplyingChangesRef.current = false;
+      });
 
       // Initialize element sync service with current elements
       elementSyncService.initializeElements(elements);
@@ -342,7 +345,7 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   const handleChange = useCallback(
     (elements: readonly OrderedExcalidrawElement[], appState: AppState, files: Record<string, unknown>) => {
       // Skip sync if we're applying remote changes to prevent infinite loops
-      if (applyingRemoteChangesRef.current) {
+      if (applyingRemoteChangesRef.current || isApplyingChangesRef.current) {
         return;
       }
 
@@ -398,18 +401,20 @@ export default function Whiteboard({ username }: WhiteboardProps) {
         });
       }
 
-      // Set flag to prevent onChange from syncing these changes back
+      // Set flags to prevent onChange from syncing these changes back
       applyingRemoteChangesRef.current = true;
+      isApplyingChangesRef.current = true;
 
       // Update the scene with merged elements
       api.updateScene({
         elements: Array.from(elementMap.values()),
       });
 
-      // Reset flag after update
-      setTimeout(() => {
+      // Reset flags after updateScene completes
+      requestAnimationFrame(() => {
         applyingRemoteChangesRef.current = false;
-      }, 0);
+        isApplyingChangesRef.current = false;
+      });
 
       // Save to local storage
       // eslint-disable-next-line @typescript-eslint/no-unused-vars

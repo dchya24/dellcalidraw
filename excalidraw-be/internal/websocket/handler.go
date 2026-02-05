@@ -343,8 +343,12 @@ func (h *Hub) handleUpdateElements(conn *Connection, payload map[string]interfac
 		r.DeleteElements(updateMsg.Changes.Deleted)
 	}
 
-	// Broadcast to other participants
-	h.broadcastToRoom(conn.RoomID, "elements_updated", payload, conn.ID)
+	// Broadcast to other participants with sender info
+	elementsUpdated := ElementsUpdatedPayload{
+		UserID:  conn.UserID,
+		Changes: updateMsg.Changes,
+	}
+	h.broadcastToRoom(conn.RoomID, "elements_updated", elementsUpdated, conn.ID)
 }
 
 // handleCursorMove handles cursor_move messages

@@ -266,6 +266,32 @@ export default function Whiteboard({ username }: WhiteboardProps) {
     }
   }, [activeTabId, username, getActiveTabRoomId]);
 
+  // Handle initial room state when joining a room
+  useEffect(() => {
+    const unsubscribe = roomService.onRoomState((payload) => {
+      const api = excalidrawAPIRef.current;
+      if (!api) return;
+
+      console.log('📦 Loading initial room state with', payload.elements?.length, 'elements');
+
+      // Convert backend elements to Excalidraw format
+      const elements = payload.elements?.map(backendEl => convertBackendToExcalidraw(backendEl)) || [];
+
+      // Update the scene with initial elements
+      if (elements.length > 0) {
+        api.updateScene({
+          elements,
+        });
+        console.log('✅ Loaded', elements.length, 'elements from room state');
+      }
+
+      // Initialize element sync service with current elements
+      elementSyncService.initializeElements(elements);
+    });
+
+    return unsubscribe;
+  }, [convertBackendToExcalidraw]);
+
   const handleAPIReady = useCallback((api: ExcalidrawImperativeAPI) => {
     excalidrawAPIRef.current = api;
     setExcalidrawAPI(api);

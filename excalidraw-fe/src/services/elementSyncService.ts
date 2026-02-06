@@ -46,7 +46,7 @@ class ElementSyncService {
     }
 
     const changes = this.calculateDelta(currentElements);
-    
+
     // Check if there are actual changes
     if (!changes.added?.length && !changes.updated?.length && !changes.deleted?.length) {
       return;
@@ -81,7 +81,7 @@ class ElementSyncService {
   private setupMessageHandlers(): void {
     wsService.on('elements_updated', (payload: ElementsUpdatedPayload) => {
       console.log('📥 Received element updates from user:', payload.userId);
-      
+
       // Update local cache
       if (payload.changes.added) {
         payload.changes.added.forEach(el => {
@@ -214,7 +214,7 @@ class ElementSyncService {
 
   // Public method to get converted elements for Excalidraw
   getExcalidrawElements(): any[] {
-    return Array.from(this.localElements.values()).map(el => 
+    return Array.from(this.localElements.values()).map(el =>
       this.convertToExcalidrawElement(el)
     );
   }

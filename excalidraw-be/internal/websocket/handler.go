@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -26,22 +27,22 @@ type Connection struct {
 
 // Hub manages active connections
 type Hub struct {
-	connections    map[string]*Connection // connID -> Connection
-	userConns      map[string]string      // userID -> connID
-	roomManager    *room.RoomManager
-	rateLimiter    *RateLimiter
+	connections       map[string]*Connection // connID -> Connection
+	userConns         map[string]string      // userID -> connID
+	roomManager       *room.RoomManager
+	rateLimiter       *RateLimiter
 	cursorRateLimiter *CursorRateLimiter
-	mu             sync.RWMutex
+	mu                sync.RWMutex
 }
 
 // NewHub creates a new connection hub
 func NewHub(rm *room.RoomManager) *Hub {
 	return &Hub{
-		connections:        make(map[string]*Connection),
-		userConns:          make(map[string]string),
-		roomManager:        rm,
-		rateLimiter:        NewRateLimiter(),
-		cursorRateLimiter:  NewCursorRateLimiter(),
+		connections:       make(map[string]*Connection),
+		userConns:         make(map[string]string),
+		roomManager:       rm,
+		rateLimiter:       NewRateLimiter(),
+		cursorRateLimiter: NewCursorRateLimiter(),
 	}
 }
 
@@ -300,6 +301,8 @@ func (h *Hub) handleUpdateElements(conn *Connection, payload map[string]interfac
 		return
 	}
 
+	fmt.Println(string(data))
+
 	var updateMsg UpdateElementsPayload
 	if err := json.Unmarshal(data, &updateMsg); err != nil {
 		h.sendError(conn, "Invalid update elements payload", "invalid_payload")
@@ -493,11 +496,17 @@ func elementsToPayload(elements []room.Element) []ElementPayload {
 	payload := make([]ElementPayload, len(elements))
 	for i, elem := range elements {
 		payload[i] = ElementPayload{
-			ID:   elem.ID,
-			Type: elem.Type,
-			X:    elem.X,
-			Y:    elem.Y,
-			Data: elem.Data,
+			ID:         elem.ID,
+			Type:       elem.Type,
+			X:          elem.X,
+			Y:          elem.Y,
+			Width:      elem.Width,
+			Height:     elem.Height,
+			Angle:      elem.Angle,
+			Stroke:     elem.Stroke,
+			Background: elem.Background,
+			Fill:       elem.Fill,
+			Data:       elem.Data,
 		}
 	}
 	return payload
@@ -519,11 +528,17 @@ func payloadToElements(elements []ElementPayload) []room.Element {
 	result := make([]room.Element, len(elements))
 	for i, elem := range elements {
 		result[i] = room.Element{
-			ID:   elem.ID,
-			Type: elem.Type,
-			X:    elem.X,
-			Y:    elem.Y,
-			Data: elem.Data,
+			ID:         elem.ID,
+			Type:       elem.Type,
+			X:          elem.X,
+			Y:          elem.Y,
+			Width:      elem.Width,
+			Height:     elem.Height,
+			Angle:      elem.Angle,
+			Stroke:     elem.Stroke,
+			Background: elem.Background,
+			Fill:       elem.Fill,
+			Data:       elem.Data,
 		}
 	}
 	return result

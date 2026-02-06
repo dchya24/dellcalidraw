@@ -184,24 +184,47 @@ export const useWhiteboardStore = create<AppStore>()(
 
       saveTabState: (tabId: string, elements: any, appState: any, files: any) => {
         const { activeFileId } = get();
-        set((state) => ({
-          files: state.files.map((f) => {
-            if (f.id !== activeFileId) return f;
-            return {
-              ...f,
-              tabs: f.tabs.map((tab) =>
-                tab.id === tabId
-                  ? {
-                      ...tab,
-                      data: { elements, appState, files },
-                      lastModified: Date.now(),
-                    }
-                  : tab
-              ),
-              lastModified: Date.now(),
-            };
-          }),
-        }));
+        set((state) => {
+          const fileIndex = state.files.findIndex((f) => f.id === activeFileId);
+          if (fileIndex === -1) return state;
+
+          const file = state.files[fileIndex];
+          const tabIndex = file.tabs.findIndex((tab) => tab.id === tabId);
+          if (tabIndex === -1) return state;
+
+          const currentTab = file.tabs[tabIndex];
+
+          // Check if data actually changed to prevent unnecessary updates
+          const currentElements = currentTab.data.elements;
+          const currentAppState = currentTab.data.appState;
+          const currentFiles = currentTab.data.files;
+
+          // Compare elements and appState deeply to avoid unnecessary updates
+          const elementsChanged = JSON.stringify(currentElements) !== JSON.stringify(elements);
+          const appStateChanged = JSON.stringify(currentAppState) !== JSON.stringify(appState);
+          const filesChanged = JSON.stringify(currentFiles) !== JSON.stringify(files);
+
+          if (!elementsChanged && !appStateChanged && !filesChanged) {
+            return state; // No change, skip update to prevent infinite loop
+          }
+
+          const newFiles = [...state.files];
+          newFiles[fileIndex] = {
+            ...file,
+            tabs: file.tabs.map((tab) =>
+              tab.id === tabId
+                ? {
+                    ...tab,
+                    data: { elements, appState, files },
+                    lastModified: Date.now(),
+                  }
+                : tab
+            ),
+            lastModified: Date.now(),
+          };
+
+          return { files: newFiles };
+        });
       },
 
       regenerateRoomId: (tabId: string) => {

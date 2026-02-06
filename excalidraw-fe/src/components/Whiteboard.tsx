@@ -2,7 +2,10 @@ import { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import debounce from "lodash.debounce";
 import { Excalidraw } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
-import type { AppState, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type {
+  AppState,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
 import { useThemeStore } from "../store/useThemeStore";
 import { roomService } from "../services/roomService";
@@ -30,37 +33,60 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
-  const { files, activeFileId, getActiveFile, saveTabState, addTab, removeTab, setActiveTab, getActiveTabRoomId } = useWhiteboardStore();
+  const {
+    files,
+    activeFileId,
+    getActiveFile,
+    saveTabState,
+    addTab,
+    removeTab,
+    setActiveTab,
+    getActiveTabRoomId,
+  } = useWhiteboardStore();
   const { theme, toggleTheme } = useThemeStore();
 
   const activeFile = getActiveFile();
   const activeTabId = activeFile?.activeTabId || "";
   const tabs = useMemo(() => activeFile?.tabs || [], [activeFile]);
 
+  // Track previous active file ID to detect actual file switches
+  const prevActiveFileIdRef = useRef<string | null>(null);
+
   // Handle switching files - save current tab and load new file's active tab
   useEffect(() => {
     const api = excalidrawAPIRef.current;
     if (!api || !isReady) return;
 
-    // Get the current state from canvas before switching
-    const elements = api.getSceneElements();
-    const appState = api.getAppState();
-    const files_data = api.getFiles();
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { collaborators, ...safeAppState } = appState;
+    // Only run when activeFileId actually changes, not on other store updates
+    if (prevActiveFileIdRef.current === activeFileId) {
+      return;
+    }
 
-    // Save to the previous tab
-    const file = files.find(f => f.id === activeFileId);
-    if (file) {
-      const prevTab = file.tabs.find(t => t.id === file.activeTabId);
-      if (prevTab) {
-        saveTabState(prevTab.id, elements, safeAppState, files_data);
+    const prevFileId = prevActiveFileIdRef.current;
+    prevActiveFileIdRef.current = activeFileId;
+
+    // Save to the previous tab before switching
+    if (prevFileId) {
+      const elements = api.getSceneElements();
+      const appState = api.getAppState();
+      const files_data = api.getFiles();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { collaborators, ...safeAppState } = appState;
+
+      const file = files.find((f) => f.id === prevFileId);
+      if (file) {
+        const prevTab = file.tabs.find((t) => t.id === file.activeTabId);
+        if (prevTab) {
+          saveTabState(prevTab.id, elements, safeAppState, files_data);
+        }
       }
     }
 
     // Load the new file's active tab
     if (activeFile) {
-      const newTab = activeFile.tabs.find(t => t.id === activeFile.activeTabId);
+      const newTab = activeFile.tabs.find(
+        (t) => t.id === activeFile.activeTabId,
+      );
       if (newTab) {
         api.updateScene({
           elements: newTab.data.elements,
@@ -71,17 +97,20 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   }, [activeFileId, activeFile, files, isReady, saveTabState]); // Run when activeFileId changes
 
   // Handle delete with confirmation
-  const handleDeleteRequest = useCallback((tabId: string) => {
-    const tab = tabs.find((t) => t.id === tabId);
-    const hasContent = tab && tab.data.elements.length > 0;
+  const handleDeleteRequest = useCallback(
+    (tabId: string) => {
+      const tab = tabs.find((t) => t.id === tabId);
+      const hasContent = tab && tab.data.elements.length > 0;
 
-    if (hasContent) {
-      setPendingDeleteId(tabId);
-      setDeleteDialogOpen(true);
-    } else {
-      removeTab(tabId);
-    }
-  }, [tabs, removeTab]);
+      if (hasContent) {
+        setPendingDeleteId(tabId);
+        setDeleteDialogOpen(true);
+      } else {
+        removeTab(tabId);
+      }
+    },
+    [tabs, removeTab],
+  );
 
   const handleDeleteConfirm = useCallback(() => {
     if (pendingDeleteId) {
@@ -202,40 +231,45 @@ export default function Whiteboard({ username }: WhiteboardProps) {
 
   // Helper function to convert backend element to Excalidraw format
   // Define this early so it can be used in other callbacks
-  const convertBackendToExcalidraw = useCallback((backendEl: {
-    id: string;
-    type: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    angle: number;
-    stroke: string;
-    background: string;
-    fill: string;
-    data?: {any: unknown};
-  }) => {
-    return {
-      id: backendEl.id,
-      type: backendEl.type,
-      x: backendEl.x,
-      y: backendEl.y,
-      width: backendEl.width,
-      height: backendEl.height,
-      angle: backendEl.angle,
-      strokeColor: backendEl.stroke,
-      backgroundColor: backendEl.background,
-      fillStyle: backendEl.fill,
-      ...(backendEl.data || {}),
-    };
-  }, []);
+  const convertBackendToExcalidraw = useCallback(
+    (backendEl: {
+      id: string;
+      type: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      angle: number;
+      stroke: string;
+      background: string;
+      fill: string;
+      data?: { any: unknown };
+    }) => {
+      return {
+        id: backendEl.id,
+        type: backendEl.type,
+        x: backendEl.x,
+        y: backendEl.y,
+        width: backendEl.width,
+        height: backendEl.height,
+        angle: backendEl.angle,
+        strokeColor: backendEl.stroke,
+        backgroundColor: backendEl.background,
+        fillStyle: backendEl.fill,
+        ...(backendEl.data || {}),
+      };
+    },
+    [],
+  );
 
   // Get initial data for Excalidraw - depends on activeFile
   const getInitialData = useCallback(() => {
     const currentFile = getActiveFile();
     if (!currentFile) return undefined;
 
-    const activeTab = currentFile.tabs.find((t) => t.id === currentFile.activeTabId);
+    const activeTab = currentFile.tabs.find(
+      (t) => t.id === currentFile.activeTabId,
+    );
 
     if (activeTab && activeTab.data.elements.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -249,23 +283,48 @@ export default function Whiteboard({ username }: WhiteboardProps) {
     return undefined;
   }, [getActiveFile]);
 
+  // Track previous tab ID for room switching
+  const prevActiveTabIdRef = useRef<string | null>(null);
+
   // Initialize element sync when room changes
   useEffect(() => {
+    if (!isReady) return;
+
     const roomId = getActiveTabRoomId();
-    if (roomId) {
-      console.log('🔄 Initializing element sync for room:', roomId);
-      elementSyncService.enableSync();
+    if (!roomId) return;
 
-      // Join the room
-      roomService.joinRoom(roomId, username).catch((error) => {
-        console.error('Failed to join room:', error);
-      });
-
-      return () => {
-        elementSyncService.disableSync();
-      };
+    // Only proceed if tab actually changed (avoid redundant reconnections)
+    if (prevActiveTabIdRef.current === roomId) {
+      return;
     }
-  }, [activeTabId, username, getActiveTabRoomId]);
+
+    const prevRoomId = prevActiveTabIdRef.current;
+    prevActiveTabIdRef.current = roomId;
+
+    // Leave previous room if any
+    if (prevRoomId && prevRoomId !== roomId) {
+      console.log("🚪 Leaving previous room:", prevRoomId);
+      roomService.leaveRoom();
+    }
+
+    console.log(
+      "🔄 Initializing element sync for room:",
+      roomId,
+      "username:",
+      username,
+    );
+    elementSyncService.enableSync();
+
+    // Note: Auto-connect disabled - users must manually join via CollaborationPanel
+    // roomService.joinRoom(roomId, username).catch((error) => {
+    //   console.error('❌ Failed to join room:', error);
+    // });
+
+    return () => {
+      // Note: We don't leave room here to avoid disconnections on re-renders
+      // Room cleanup happens when switching to a different room
+    };
+  }, [activeTabId, username, isReady]);
 
   // Handle initial room state when joining a room
   useEffect(() => {
@@ -273,10 +332,17 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       const api = excalidrawAPIRef.current;
       if (!api) return;
 
-      console.log('📦 Loading initial room state with', payload.elements?.length, 'elements');
+      console.log(
+        "📦 Loading initial room state with",
+        payload.elements?.length,
+        "elements",
+      );
 
       // Convert backend elements to Excalidraw format
-      const elements = payload.elements?.map(backendEl => convertBackendToExcalidraw(backendEl)) || [];
+      const elements =
+        payload.elements?.map((backendEl) =>
+          convertBackendToExcalidraw(backendEl),
+        ) || [];
 
       // Set flags to prevent onChange from syncing these changes back
       applyingRemoteChangesRef.current = true;
@@ -287,7 +353,7 @@ export default function Whiteboard({ username }: WhiteboardProps) {
         api.updateScene({
           elements,
         });
-        console.log('✅ Loaded', elements.length, 'elements from room state');
+        console.log("✅ Loaded", elements.length, "elements from room state");
       }
 
       // Reset flags after updateScene completes
@@ -328,21 +394,39 @@ export default function Whiteboard({ username }: WhiteboardProps) {
         api.history.clear();
       }
     },
-    [activeTabId, saveTabState, getActiveFile]
+    [activeTabId, saveTabState, getActiveFile],
   );
 
   // Debounced save handler for performance optimization
   const debouncedSave = useMemo(
-    () => debounce((tabId: string, elements: readonly unknown[], appState: AppState, files: Record<string, unknown>) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { collaborators, ...safeAppState } = appState;
-      saveTabState(tabId, elements as readonly unknown[], safeAppState, files);
-    }, 500), // 500ms debounce delay
-    [saveTabState]
+    () =>
+      debounce(
+        (
+          tabId: string,
+          elements: readonly unknown[],
+          appState: AppState,
+          files: Record<string, unknown>,
+        ) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { collaborators, ...safeAppState } = appState;
+          saveTabState(
+            tabId,
+            elements as readonly unknown[],
+            safeAppState,
+            files,
+          );
+        },
+        500,
+      ), // 500ms debounce delay
+    [saveTabState],
   );
 
   const handleChange = useCallback(
-    (elements: readonly OrderedExcalidrawElement[], appState: AppState, files: Record<string, unknown>) => {
+    (
+      elements: readonly OrderedExcalidrawElement[],
+      appState: AppState,
+      files: Record<string, unknown>,
+    ) => {
       // Skip sync if we're applying remote changes to prevent infinite loops
       if (applyingRemoteChangesRef.current || isApplyingChangesRef.current) {
         return;
@@ -354,7 +438,7 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       // Save locally with debouncing
       debouncedSave(activeTabId, elements, appState, files);
     },
-    [activeTabId, debouncedSave]
+    [activeTabId, debouncedSave],
   );
 
   // Handle incoming element updates from other users
@@ -363,7 +447,7 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       const api = excalidrawAPIRef.current;
       if (!api) return;
 
-      console.log('📥 Applying remote element changes:', payload);
+      console.log("📥 Applying remote element changes:", payload);
 
       // Show conflict warning if someone else is editing
       if (payload.userId) {
@@ -373,25 +457,25 @@ export default function Whiteboard({ username }: WhiteboardProps) {
 
       // Get current elements
       const currentElements = api.getSceneElements();
-      const elementMap = new Map(currentElements.map(el => [el.id, el]));
+      const elementMap = new Map(currentElements.map((el) => [el.id, el]));
 
       // Apply changes
       if (payload.changes.added) {
-        payload.changes.added.forEach(backendEl => {
+        payload.changes.added.forEach((backendEl) => {
           const excalidrawEl = convertBackendToExcalidraw(backendEl);
           elementMap.set(backendEl.id, excalidrawEl);
         });
       }
 
       if (payload.changes.updated) {
-        payload.changes.updated.forEach(backendEl => {
+        payload.changes.updated.forEach((backendEl) => {
           const excalidrawEl = convertBackendToExcalidraw(backendEl);
           elementMap.set(backendEl.id, excalidrawEl);
         });
       }
 
       if (payload.changes.deleted) {
-        payload.changes.deleted.forEach(id => {
+        payload.changes.deleted.forEach((id) => {
           elementMap.delete(id);
         });
       }
@@ -414,7 +498,12 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       // Save to local storage
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { collaborators, ...safeAppState } = api.getAppState();
-      saveTabState(activeTabId, Array.from(elementMap.values()), safeAppState, api.getFiles());
+      saveTabState(
+        activeTabId,
+        Array.from(elementMap.values()),
+        safeAppState,
+        api.getFiles(),
+      );
     });
 
     return unsubscribe;
@@ -438,58 +527,69 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   }, [activeTabId, saveTabState, addTab]);
 
   // Drag and drop import handler
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    const files = Array.from(e.dataTransfer.files);
-    const jsonFile = files.find(f =>
-      f.name.endsWith('.excalidraw') ||
-      f.name.endsWith('.json') ||
-      f.type === 'application/json'
-    );
+      const files = Array.from(e.dataTransfer.files);
+      const jsonFile = files.find(
+        (f) =>
+          f.name.endsWith(".excalidraw") ||
+          f.name.endsWith(".json") ||
+          f.type === "application/json",
+      );
 
-    if (jsonFile) {
-      try {
-        const text = await jsonFile.text();
-        const data = JSON.parse(text);
+      if (jsonFile) {
+        try {
+          const text = await jsonFile.text();
+          const data = JSON.parse(text);
 
-        // Handle both single tab and multi-file formats
-        if (data.type === 'excalidraw' && data.elements) {
-          // Single tab format (native Excalidraw)
-          const api = excalidrawAPIRef.current;
-          if (api) {
-            // Save current state first
-            const currentElements = api.getSceneElements();
-            const currentAppState = api.getAppState();
-            const currentFiles = api.getFiles();
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { collaborators, ...safeAppState } = currentAppState;
-            saveTabState(activeTabId, currentElements, safeAppState, currentFiles);
+          // Handle both single tab and multi-file formats
+          if (data.type === "excalidraw" && data.elements) {
+            // Single tab format (native Excalidraw)
+            const api = excalidrawAPIRef.current;
+            if (api) {
+              // Save current state first
+              const currentElements = api.getSceneElements();
+              const currentAppState = api.getAppState();
+              const currentFiles = api.getFiles();
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              const { collaborators, ...safeAppState } = currentAppState;
+              saveTabState(
+                activeTabId,
+                currentElements,
+                safeAppState,
+                currentFiles,
+              );
 
-            // Create new tab with imported data
-            addTab();
+              // Create new tab with imported data
+              addTab();
 
-            api.updateScene({
-              elements: data.elements || [],
-              appState: data.appState || {},
+              api.updateScene({
+                elements: data.elements || [],
+                appState: data.appState || {},
+              });
+              api.history.clear();
+            }
+          } else if (data.tabs && Array.isArray(data.tabs)) {
+            // Multi-tab format (our custom format)
+            const { loadFromFile } = useWhiteboardStore.getState();
+            loadFromFile({
+              tabs: data.tabs,
+              activeTabId: data.activeTabId || data.tabs[0]?.id,
             });
-            api.history.clear();
           }
-        } else if (data.tabs && Array.isArray(data.tabs)) {
-          // Multi-tab format (our custom format)
-          const { loadFromFile } = useWhiteboardStore.getState();
-          loadFromFile({
-            tabs: data.tabs,
-            activeTabId: data.activeTabId || data.tabs[0]?.id
-          });
+        } catch (error) {
+          console.error("Failed to import file:", error);
+          alert(
+            "Failed to import file. Please make sure it is a valid .excalidraw or .json file.",
+          );
         }
-      } catch (error) {
-        console.error('Failed to import file:', error);
-        alert('Failed to import file. Please make sure it is a valid .excalidraw or .json file.');
       }
-    }
-  }, [activeTabId, saveTabState, addTab]);
+    },
+    [activeTabId, saveTabState, addTab],
+  );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -543,8 +643,18 @@ export default function Whiteboard({ username }: WhiteboardProps) {
         {/* Sync Status Indicator */}
         {conflictWarning && (
           <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-50 px-4 py-2 bg-yellow-500 text-white rounded-lg shadow-lg flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
             </svg>
             {conflictWarning}
           </div>

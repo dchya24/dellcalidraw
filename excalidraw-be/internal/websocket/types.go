@@ -28,11 +28,17 @@ type ElementChanges struct {
 }
 
 type ElementPayload struct {
-	ID      string                 `json:"id"`
-	Type    string                 `json:"type"`
-	X       float64                `json:"x"`
-	Y       float64                `json:"y"`
-	Data    map[string]interface{} `json:"data,omitempty"`
+	ID         string                 `json:"id"`
+	Type       string                 `json:"type"`
+	X          float64                `json:"x"`
+	Y          float64                `json:"y"`
+	Width      float64                `json:"width,omitempty"`
+	Height     float64                `json:"height,omitempty"`
+	Angle      float64                `json:"angle,omitempty"`
+	Stroke     string                 `json:"stroke,omitempty"`
+	Background string                 `json:"background,omitempty"`
+	Fill       string                 `json:"fill,omitempty"`
+	Data       map[string]interface{} `json:"data,omitempty"`
 }
 
 type CursorMovePayload struct {

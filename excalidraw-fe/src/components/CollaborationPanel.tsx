@@ -57,11 +57,11 @@ export default function CollaborationPanel({
 
   // Monitor participants
   useEffect(() => {
-    const unsubJoined = roomService.onUserJoined((payload) => {
+    const unsubJoined = roomService.onUserJoined(() => {
       setParticipants(roomService.getParticipants());
     });
 
-    const unsubLeft = roomService.onUserLeft((payload) => {
+    const unsubLeft = roomService.onUserLeft(() => {
       setParticipants(roomService.getParticipants());
     });
 

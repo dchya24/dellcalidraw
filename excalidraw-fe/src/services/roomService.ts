@@ -1,5 +1,5 @@
 import { wsService } from './websocket';
-import type { JoinRoomPayload, RoomStatePayload, UserJoinedPayload, UserLeftPayload, Participant } from '../types/websocket';
+import type { JoinRoomPayload, RoomStatePayload, UserJoinedPayload, UserLeftPayload, Participant, ErrorPayload } from '../types/websocket';
 
 interface RoomServiceConfig {
   wsUrl: string;
@@ -182,6 +182,12 @@ class RoomService {
     wsService.onConnectionChange((connected) => {
       this.isConnected = connected;
       this.notifyConnectionChange(connected);
+    });
+
+    // Handle errors
+    wsService.on('error', (payload: ErrorPayload) => {
+      console.error('❌ Server error:', payload.message, payload.code);
+      // Could add user-facing error notifications here
     });
   }
 

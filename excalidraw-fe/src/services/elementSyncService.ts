@@ -6,11 +6,14 @@ import type {
   ElementsUpdatedPayload,
   Element,
 } from '../types/websocket';
+import { debounce } from '../utils/debounce';
 
 class ElementSyncService {
   private localElements: Map<string, Element> = new Map();
   private isSyncEnabled: boolean = false;
   private elementUpdateListeners: Set<(payload: ElementsUpdatedPayload) => void> = new Set();
+  private pendingChanges: ElementChanges | null = null;
+  private debouncedSend: (() => void) | null = null;
 
   enableSync(): void {
     this.isSyncEnabled = true;
@@ -52,6 +55,62 @@ class ElementSyncService {
       return;
     }
 
+    // Update local cache immediately
+    this.updateLocalCache(currentElements);
+
+    // Accumulate changes
+    this.accumulateChanges(changes);
+
+    // Debounce the send to avoid rate limiting
+    if (!this.debouncedSend) {
+      this.debouncedSend = debounce(() => {
+        this.flushChanges();
+      }, 100); // 100ms debounce
+    }
+
+    this.debouncedSend();
+  }
+
+  private accumulateChanges(changes: ElementChanges): void {
+    if (!this.pendingChanges) {
+      this.pendingChanges = { added: [], updated: [], deleted: [] };
+    }
+
+    // Merge added elements (avoid duplicates)
+    if (changes.added) {
+      const existingIds = new Set(this.pendingChanges.added?.map(e => e.id) || []);
+      changes.added.forEach(el => {
+        if (el.id && !existingIds.has(el.id)) {
+          this.pendingChanges!.added?.push(el);
+        }
+      });
+    }
+
+    // Merge updated elements (latest wins)
+    if (changes.updated) {
+      const updatedMap = new Map(this.pendingChanges.updated?.map(e => [e.id, e]) || []);
+      changes.updated.forEach(el => {
+        if (el.id) {
+          updatedMap.set(el.id, el);
+        }
+      });
+      this.pendingChanges.updated = Array.from(updatedMap.values());
+    }
+
+    // Merge deleted elements
+    if (changes.deleted) {
+      const deletedSet = new Set(this.pendingChanges.deleted || []);
+      changes.deleted.forEach(id => deletedSet.add(id));
+      this.pendingChanges.deleted = Array.from(deletedSet);
+    }
+  }
+
+  private flushChanges(): void {
+    if (!this.pendingChanges) return;
+
+    const changes = this.pendingChanges;
+    this.pendingChanges = null;
+
     const roomId = roomService.getCurrentRoom();
     if (!roomId) {
       console.warn('Cannot send element changes: not in a room');
@@ -67,9 +126,6 @@ class ElementSyncService {
     if (sent) {
       console.log('📤 Sent element changes:', changes);
     }
-
-    // Update local cache
-    this.updateLocalCache(currentElements);
   }
 
   // Handle incoming element updates from other users

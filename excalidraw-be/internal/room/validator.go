@@ -60,7 +60,7 @@ func ValidateElement(element Element) []ValidationError {
 		})
 	}
 
-	// Validate dimensions
+	// Validate dimensions (allow 0 for newly created elements)
 	if element.Width < 0 || element.Width > 100000 {
 		errors = append(errors, ValidationError{
 			Field:   "width",

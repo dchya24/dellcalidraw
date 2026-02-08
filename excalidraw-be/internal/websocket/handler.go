@@ -309,20 +309,6 @@ func (h *Hub) handleUpdateElements(conn *Connection, payload map[string]interfac
 		return
 	}
 
-	// Validate elements
-	elementsToValidate := []room.Element{}
-	elementsToValidate = append(elementsToValidate, payloadToElements(updateMsg.Changes.Added)...)
-	elementsToValidate = append(elementsToValidate, payloadToElements(updateMsg.Changes.Updated)...)
-
-	if len(elementsToValidate) > 0 {
-		validationErrors := room.ValidateElementsBatch(elementsToValidate)
-		if len(validationErrors) > 0 {
-			h.sendError(conn, "Element validation failed", "validation_error")
-			slog.Warn("Element validation failed", "errors", validationErrors, "userID", conn.UserID)
-			return
-		}
-	}
-
 	// Check element count limit
 	currentElementCount := len(r.GetElements())
 	totalAdding := len(updateMsg.Changes.Added)

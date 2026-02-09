@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # Backend service (development mode)
+  backend-dev:
+    build:
+      context: ./excalidraw-be
+      dockerfile: Dockerfile.dev
+    container_name: excalidraw-backend-dev
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+    env_file:
+      - ./excalidraw-be/.env
+    volumes:
+      - ./excalidraw-be:/app
+    restart: unless-stopped
+    networks:
+      - excalidraw-network
+
+  # Frontend service (development mode)
+  frontend-dev:
+    build:
+      context: ./excalidraw-fe
+      dockerfile: Dockerfile.dev
+    container_name: excalidraw-frontend-dev
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend-dev
+    volumes:
+      - ./excalidraw-fe:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8080
+    restart: unless-stopped
+    networks:
+      - excalidraw-network
+
+networks:
+  excalidraw-network:
+    driver: bridge

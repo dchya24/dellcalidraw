@@ -1,0 +1,12 @@
+bin
+*.log
+.env
+.env.local
+.git
+.gitignore
+README.md
+Makefile
+coverage.out
+coverage.html
+air.toml
+.DS_Store

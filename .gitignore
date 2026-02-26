@@ -96,10 +96,6 @@ Thumbs.db
 # ====================
 # Package Manager
 # ====================
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-go.sum
 
 # ====================
 # Misc

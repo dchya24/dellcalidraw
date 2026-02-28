@@ -14,6 +14,7 @@ import { useThemeStore } from "../store/useThemeStore";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { exportToSvg, exportToBlob } from "@excalidraw/excalidraw";
 import CollaborationPanel from "./CollaborationPanel";
+import type { WhiteboardTab } from "../store/useWhiteboardStore";
 
 interface ToolbarProps {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
@@ -140,7 +141,7 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
           loadFromFile(data);
           if (excalidrawAPI) {
             const activeTab = data.tabs.find(
-              (t: any) => t.id === data.activeTabId
+              (t: WhiteboardTab) => t.id === data.activeTabId
             );
             if (activeTab) {
               excalidrawAPI.updateScene({
@@ -206,7 +207,7 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
         <CollaborationPanel
           roomId={roomId}
           username={username}
-          onRegenerateRoomId={regenerateRoomId}
+          onRegenerateRoomId={() => regenerateRoomId(roomId)}
         />
 
         {/* Import/Export Section */}
@@ -236,7 +237,7 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
             >
               <Upload size={18} />
             </button>
-            <div className={`absolute right-0 top-full mt-2 rounded-lg shadow-xl border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all min-w-[180px] overflow-hidden ${
+            <div className={`absolute right-0 top-full mt-2 rounded-lg shadow-xl border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all min-w-45 overflow-hidden ${
               theme === "dark" ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
             }`}>
               <button

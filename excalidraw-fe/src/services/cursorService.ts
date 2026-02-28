@@ -4,10 +4,9 @@ import type { CursorMovePayload, CursorUpdatedPayload, CursorPosition, RemoteCur
 
 class CursorService {
   private isTracking: boolean = false;
-  private currentPosition: CursorPosition = { x: 0, y: 0 };
   private lastSentPosition: CursorPosition = { x: -1, y: -1 };
   private remoteCursors: Map<string, RemoteCursor> = new Map();
-  private updateInterval: NodeJS.Timeout | null = null;
+  private updateInterval: number | null = null;
   private cursorUpdateListeners: Set<(cursor: RemoteCursor) => void> = new Set();
   private cursorRemoveListeners: Set<(userId: string) => void> = new Set();
 

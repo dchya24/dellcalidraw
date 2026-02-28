@@ -3,7 +3,6 @@ import { Users, Copy, RefreshCw, Wifi, WifiOff, Loader2, ChevronDown } from "luc
 import { roomService } from "../services/roomService";
 import { copyShareableLink } from "../utils/roomURL";
 import { useThemeStore } from "../store/useThemeStore";
-import type { Participant } from "../types/websocket";
 
 interface CollaborationPanelProps {
   roomId: string;
@@ -18,9 +17,9 @@ export default function CollaborationPanel({
 }: CollaborationPanelProps) {
   const [copied, setCopied] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(() => roomService.isConnectedToRoom());
   const [isConnecting, setIsConnecting] = useState(false);
-  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [participants, setParticipants] = useState(() => roomService.getParticipants());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { theme } = useThemeStore();
 
@@ -47,10 +46,6 @@ export default function CollaborationPanel({
       setIsConnected(connected);
       setIsConnecting(false);
     });
-
-    // Check initial state
-    setIsConnected(roomService.isConnectedToRoom());
-    setParticipants(roomService.getParticipants());
 
     return unsubConnect;
   }, []);

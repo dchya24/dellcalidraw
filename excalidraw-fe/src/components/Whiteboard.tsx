@@ -6,6 +6,14 @@ import type {
   AppState,
   ExcalidrawImperativeAPI,
 } from "@excalidraw/excalidraw/types";
+import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+
+interface ExcalidrawImperativeAPIWithHistory extends ExcalidrawImperativeAPI {
+  history: ExcalidrawImperativeAPI["history"] & {
+    undo: () => void;
+    redo: () => void;
+  };
+}
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
 import { useThemeStore } from "../store/useThemeStore";
 import { roomService } from "../services/roomService";
@@ -16,14 +24,13 @@ import Toolbar from "./Toolbar";
 import ConfirmDialog from "./ConfirmDialog";
 import Sidebar from "./Sidebar";
 import RemoteCursors from "./RemoteCursors";
-import { OrderedExcalidrawElement } from "@excalidraw/excalidraw";
 
 interface WhiteboardProps {
   username: string;
 }
 
 export default function Whiteboard({ username }: WhiteboardProps) {
-  const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const excalidrawAPIRef = useRef<ExcalidrawImperativeAPIWithHistory | null>(null);
   const applyingRemoteChangesRef = useRef(false); // Track when applying remote changes to prevent loops
   const isApplyingChangesRef = useRef(false); // Additional lock to prevent race conditions
   const [excalidrawAPI, setExcalidrawAPI] =

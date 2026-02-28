@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
-interface WhiteboardTab {
+export interface WhiteboardTab {
   id: string;
   title: string;
   roomId: string;
@@ -26,13 +26,13 @@ interface WhiteboardFile {
 interface AppStore {
   files: WhiteboardFile[];
   activeFileId: string;
-  
+
   // File operations
   createFile: (name?: string) => void;
   deleteFile: (id: string) => void;
   renameFile: (id: string, newName: string) => void;
   setActiveFile: (id: string) => void;
-  
+
   // Tab operations (within active file)
   addTab: () => void;
   removeTab: (tabId: string) => void;
@@ -40,12 +40,12 @@ interface AppStore {
   setActiveTab: (tabId: string) => void;
   saveTabState: (tabId: string, elements: any, appState: any, files: any) => void;
   regenerateRoomId: (tabId: string) => void;
-  
+
   // Getters
   getActiveFile: () => WhiteboardFile | undefined;
   getActiveTab: () => WhiteboardTab | undefined;
   getActiveTabRoomId: () => string;
-  
+
   // Import/Export (per file)
   loadFromFile: (data: { tabs: WhiteboardTab[]; activeTabId: string }) => void;
   loadNativeExcalidraw: (elements: any, appState: any, files: any) => void;
@@ -121,7 +121,7 @@ export const useWhiteboardStore = create<AppStore>()(
 
       // Tab operations (within active file)
       addTab: () => {
-        const { files, activeFileId } = get();
+        const { activeFileId } = get();
         set((state) => ({
           files: state.files.map((f) => {
             if (f.id !== activeFileId) return f;
@@ -137,7 +137,7 @@ export const useWhiteboardStore = create<AppStore>()(
       },
 
       removeTab: (tabId: string) => {
-        const { files, activeFileId } = get();
+        const { activeFileId } = get();
         set((state) => ({
           files: state.files.map((f) => {
             if (f.id !== activeFileId) return f;

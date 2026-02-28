@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from "react";
-import { createPortal } from "react-dom";
 import { Plus, X, List } from "lucide-react";
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
 import { useThemeStore } from "../store/useThemeStore";
@@ -8,15 +7,15 @@ interface TabBarProps {
   onTabChange: (tabId: string) => void;
   onAddTab: () => void;
   onDeleteRequest?: (tabId: string) => void;
+  handleFloatingTabOpen: () => void;
 }
 
-export default function TabBar({ onTabChange, onAddTab, onDeleteRequest }: TabBarProps) {
+export default function TabBar({ onTabChange, onAddTab, onDeleteRequest, handleFloatingTabOpen }: TabBarProps) {
   const { getActiveFile, removeTab, renameTab, setActiveTab } = useWhiteboardStore();
   const { theme } = useThemeStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
-  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -65,14 +64,8 @@ export default function TabBar({ onTabChange, onAddTab, onDeleteRequest }: TabBa
   };
 
   const handleToggleDropdown = () => {
-    if (!showDropdown && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      setDropdownPosition({
-        top: rect.bottom + 8,
-        left: rect.left
-      });
-    }
     setShowDropdown(!showDropdown);
+    handleFloatingTabOpen();
   };
 
   const handleRemoveTab = (e: React.MouseEvent, tabId: string) => {
@@ -108,77 +101,6 @@ export default function TabBar({ onTabChange, onAddTab, onDeleteRequest }: TabBa
         >
           <List size={18} />
         </button>
-
-        {showDropdown && createPortal(
-          <div
-            className={`fixed w-64 rounded-lg shadow-xl border max-h-96 overflow-y-auto ${
-              theme === "dark"
-                ? "bg-gray-800 border-gray-700"
-                : "bg-white border-gray-200"
-            }`}
-            style={{
-              top: `${dropdownPosition.top}px`,
-              left: `${dropdownPosition.left}px`,
-              zIndex: 9999
-            }}
-            ref={dropdownRef}
-          >
-            <div className="p-2 z-50">
-              {tabs.map((tab) => (
-                <div
-                  key={tab.id}
-                  onClick={() => {
-                    handleTabClick(tab.id);
-                    setShowDropdown(false);
-                  }}
-                  className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
-                    activeTabId === tab.id
-                      ? theme === "dark"
-                        ? "bg-gray-700"
-                        : "bg-blue-50"
-                      : theme === "dark"
-                        ? "hover:bg-gray-700/50"
-                        : "hover:bg-gray-100"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span
-                      className={`text-sm truncate ${
-                        activeTabId === tab.id
-                          ? theme === "dark"
-                            ? "text-white font-medium"
-                            : "text-gray-900 font-medium"
-                          : theme === "dark"
-                            ? "text-gray-300"
-                            : "text-gray-700"
-                      }`}
-                    >
-                      {tab.title}
-                    </span>
-                  </div>
-                  {tabs.length > 1 && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveTab(e, tab.id);
-                        setShowDropdown(false);
-                      }}
-                      className={`p-1 rounded transition-colors ${
-                        theme === "dark"
-                          ? "hover:bg-red-900/30 text-gray-400 hover:text-red-400"
-                          : "hover:bg-red-100 text-gray-400 hover:text-red-600"
-                      }`}
-                      title="Delete tab"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>,
-          document.body
-        )}
       </div>
 
       {tabs.map((tab) => (

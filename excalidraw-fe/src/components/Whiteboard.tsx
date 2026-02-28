@@ -9,8 +9,6 @@ import type {
   BinaryFiles,
 } from "@excalidraw/excalidraw/types";
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-
-
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
 import { useThemeStore } from "../store/useThemeStore";
 import { roomService } from "../services/roomService";
@@ -21,6 +19,7 @@ import Toolbar from "./Toolbar";
 import ConfirmDialog from "./ConfirmDialog";
 import Sidebar from "./Sidebar";
 import RemoteCursors from "./RemoteCursors";
+import FloatingTab from "./FloatingTab";
 
 interface WhiteboardProps {
   username: string;
@@ -37,6 +36,7 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
+  const [floatingTabOpen, setFloatingTabOpen] = useState(false);
   const {
     files,
     activeFileId,
@@ -114,6 +114,13 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       }
     },
     [tabs, removeTab],
+  );
+
+  const handleFloatingTabOpen = useCallback(
+    () => {
+      setFloatingTabOpen(!floatingTabOpen);
+    },
+    [setFloatingTabOpen, floatingTabOpen],
   );
 
   const handleDeleteConfirm = useCallback(() => {
@@ -646,6 +653,17 @@ export default function Whiteboard({ username }: WhiteboardProps) {
           username={username}
         />
 
+        {
+          floatingTabOpen && (
+            <FloatingTab
+              tabs={tabs}
+              activeTabId={activeTabId}
+              onTabChange={handleTabChange}
+              onDeleteRequest={handleDeleteRequest}
+            />
+          )
+        }
+
         {/* Sync Status Indicator */}
         {conflictWarning && (
           <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-50 px-4 py-2 bg-yellow-500 text-white rounded-lg shadow-lg flex items-center gap-2">
@@ -673,13 +691,14 @@ export default function Whiteboard({ username }: WhiteboardProps) {
           initialData={getInitialData()}
         />
         <RemoteCursors />
+
       </div>
       <TabBar
         onTabChange={handleTabChange}
         onAddTab={handleAddTab}
         onDeleteRequest={handleDeleteRequest}
+        handleFloatingTabOpen={handleFloatingTabOpen}
       />
-
       <ConfirmDialog
         isOpen={deleteDialogOpen}
         title="Delete Sheet"

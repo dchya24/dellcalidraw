@@ -237,7 +237,7 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
             >
               <Upload size={18} />
             </button>
-            <div className={`absolute right-0 top-full mt-2 rounded-lg shadow-xl border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all min-w-45 overflow-hidden ${
+            <div className={`absolute right-0 bottom-full mt-2 rounded-lg shadow-xl border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all min-w-45 overflow-hidden ${
               theme === "dark" ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
             }`}>
               <button

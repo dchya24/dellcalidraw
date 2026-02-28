@@ -6,6 +6,7 @@ import type {
   ElementsUpdatedPayload,
   Element,
 } from '../types/websocket';
+import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import { debounce } from '../utils/debounce';
 
 class ElementSyncService {
@@ -31,7 +32,7 @@ class ElementSyncService {
   }
 
   // Initialize local elements from Excalidraw
-  initializeElements(elements: readonly any[]): void {
+  initializeElements(elements: readonly OrderedExcalidrawElement[]): void {
     this.localElements.clear();
     elements.forEach(el => {
       if (el.id) {
@@ -41,7 +42,7 @@ class ElementSyncService {
   }
 
   // Calculate delta and send changes to backend
-  sendChanges(currentElements: readonly any[]): void {
+  sendChanges(currentElements: readonly OrderedExcalidrawElement[]): void {
     if (!this.isSyncing()) {
       // Just update local cache
       this.updateLocalCache(currentElements);
@@ -166,7 +167,7 @@ class ElementSyncService {
     });
   }
 
-  private calculateDelta(currentElements: readonly any[]): ElementChanges {
+  private calculateDelta(currentElements: readonly OrderedExcalidrawElement[]): ElementChanges {
     const changes: ElementChanges = {
       added: [],
       updated: [],
@@ -202,7 +203,7 @@ class ElementSyncService {
     return changes;
   }
 
-  private updateLocalCache(elements: readonly any[]): void {
+  private updateLocalCache(elements: readonly OrderedExcalidrawElement[]): void {
     elements.forEach(el => {
       if (el.id) {
         this.localElements.set(el.id, this.convertToBackendElement(el));
@@ -210,7 +211,7 @@ class ElementSyncService {
     });
   }
 
-  private convertToBackendElement(excalidrawEl: any): Element {
+  private convertToBackendElement(excalidrawEl: OrderedExcalidrawElement): Element {
     return {
       id: excalidrawEl.id,
       type: excalidrawEl.type,
@@ -224,23 +225,23 @@ class ElementSyncService {
       fill: excalidrawEl.fillStyle,
       data: {
         // Store additional Excalidraw-specific data
-        version: excalidrawEl.version,
-        versionNonce: excalidrawEl.versionNonce,
-        isDeleted: excalidrawEl.isDeleted,
-        seed: excalidrawEl.seed,
-        groupIds: excalidrawEl.groupIds,
-        frameId: excalidrawEl.frameId,
-        index: excalidrawEl.index,
-        roundness: excalidrawEl.roundness,
-        boundElements: excalidrawEl.boundElements,
+        version: (excalidrawEl as Record<string, unknown>).version,
+        versionNonce: (excalidrawEl as Record<string, unknown>).versionNonce,
+        isDeleted: (excalidrawEl as Record<string, unknown>).isDeleted,
+        seed: (excalidrawEl as Record<string, unknown>).seed,
+        groupIds: (excalidrawEl as Record<string, unknown>).groupIds,
+        frameId: (excalidrawEl as Record<string, unknown>).frameId,
+        index: (excalidrawEl as Record<string, unknown>).index,
+        roundness: (excalidrawEl as Record<string, unknown>).roundness,
+        boundElements: (excalidrawEl as Record<string, unknown>).boundElements,
       },
     };
   }
 
-  private convertToExcalidrawElement(backendEl: Element): any {
+  private convertToExcalidrawElement(backendEl: Element): OrderedExcalidrawElement {
     return {
       id: backendEl.id,
-      type: backendEl.type,
+      type: backendEl.type as OrderedExcalidrawElement["type"],
       x: backendEl.x,
       y: backendEl.y,
       width: backendEl.width,
@@ -248,9 +249,9 @@ class ElementSyncService {
       angle: backendEl.angle,
       strokeColor: backendEl.stroke,
       backgroundColor: backendEl.background,
-      fillStyle: backendEl.fill,
+      fillStyle: backendEl.fill as OrderedExcalidrawElement["fillStyle"],
       ...(backendEl.data || {}),
-    };
+    } as OrderedExcalidrawElement;
   }
 
   private elementsDiffer(el1: Element, el2: Element): boolean {
@@ -269,7 +270,7 @@ class ElementSyncService {
   }
 
   // Public method to get converted elements for Excalidraw
-  getExcalidrawElements(): any[] {
+  getExcalidrawElements(): OrderedExcalidrawElement[] {
     return Array.from(this.localElements.values()).map(el =>
       this.convertToExcalidrawElement(el)
     );

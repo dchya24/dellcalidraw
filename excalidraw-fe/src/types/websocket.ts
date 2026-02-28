@@ -1,5 +1,5 @@
 // WebSocket Message Types
-export interface WSMessage<T = any> {
+export interface WSMessage<T = unknown> {
   type: string;
   payload: T;
 }
@@ -16,7 +16,7 @@ export interface Element {
   stroke?: string;
   background?: string;
   fill?: string;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
 }
 
 // User Types

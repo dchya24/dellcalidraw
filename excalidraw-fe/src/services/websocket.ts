@@ -6,7 +6,7 @@ export interface WSConfig {
   maxReconnectAttempts?: number;
 }
 
-type MessageHandler = (payload: any) => void;
+type MessageHandler = (payload: unknown) => void;
 type ConnectionChangeHandler = (connected: boolean) => void;
 
 class WebSocketService {
@@ -100,7 +100,7 @@ class WebSocketService {
     };
   }
 
-  send(type: string, payload: any): boolean {
+  send(type: string, payload: unknown): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.warn('Cannot send message: WebSocket not connected', { type, readyState: this.ws?.readyState });
       return false;

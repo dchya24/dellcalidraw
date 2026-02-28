@@ -5,15 +5,12 @@ import "@excalidraw/excalidraw/index.css";
 import type {
   AppState,
   ExcalidrawImperativeAPI,
+  BinaryFileData,
+  BinaryFiles,
 } from "@excalidraw/excalidraw/types";
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 
-interface ExcalidrawImperativeAPIWithHistory extends ExcalidrawImperativeAPI {
-  history: ExcalidrawImperativeAPI["history"] & {
-    undo: () => void;
-    redo: () => void;
-  };
-}
+
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
 import { useThemeStore } from "../store/useThemeStore";
 import { roomService } from "../services/roomService";
@@ -30,7 +27,7 @@ interface WhiteboardProps {
 }
 
 export default function Whiteboard({ username }: WhiteboardProps) {
-  const excalidrawAPIRef = useRef<ExcalidrawImperativeAPIWithHistory | null>(null);
+  const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const applyingRemoteChangesRef = useRef(false); // Track when applying remote changes to prevent loops
   const isApplyingChangesRef = useRef(false); // Additional lock to prevent race conditions
   const [excalidrawAPI, setExcalidrawAPI] =
@@ -150,14 +147,6 @@ export default function Whiteboard({ username }: WhiteboardProps) {
             e.preventDefault();
             console.log("Manual save triggered");
             break;
-          case "z":
-            e.preventDefault();
-            excalidrawAPIRef.current?.history.undo();
-            break;
-          case "y":
-            e.preventDefault();
-            excalidrawAPIRef.current?.history.redo();
-            break;
           case "t":
             e.preventDefault();
             addTab();
@@ -244,27 +233,27 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       type: string;
       x: number;
       y: number;
-      width: number;
-      height: number;
-      angle: number;
-      stroke: string;
-      background: string;
-      fill: string;
-      data?: { any: unknown };
-    }) => {
+      width?: number;
+      height?: number;
+      angle?: number;
+      stroke?: string;
+      background?: string;
+      fill?: string;
+      data?: Record<string, unknown>;
+    }): OrderedExcalidrawElement => {
       return {
         id: backendEl.id,
-        type: backendEl.type,
+        type: backendEl.type as OrderedExcalidrawElement["type"],
         x: backendEl.x,
         y: backendEl.y,
-        width: backendEl.width,
-        height: backendEl.height,
-        angle: backendEl.angle,
-        strokeColor: backendEl.stroke,
-        backgroundColor: backendEl.background,
-        fillStyle: backendEl.fill,
-        ...(backendEl.data || {}),
-      };
+        width: backendEl.width ?? 0,
+        height: backendEl.height ?? 0,
+        angle: backendEl.angle ?? 0,
+        strokeColor: backendEl.stroke ?? "#000000",
+        backgroundColor: backendEl.background ?? "transparent",
+        fillStyle: backendEl.fill ?? "solid" as OrderedExcalidrawElement["fillStyle"],
+        ...((backendEl.data || {}) as Partial<OrderedExcalidrawElement>),
+      } as OrderedExcalidrawElement;
     },
     [],
   );
@@ -281,10 +270,34 @@ export default function Whiteboard({ username }: WhiteboardProps) {
     if (activeTab && activeTab.data.elements.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { collaborators, ...safeAppState } = activeTab.data.appState || {};
+
+      // Convert files from Record<string, unknown> to BinaryFiles format
+      const binaryFiles: BinaryFiles = {};
+
+      Object.entries(activeTab.data.files || {}).forEach(([key, value]) => {
+        if (
+          typeof value === 'object' &&
+          value !== null &&
+          'mimeType' in value &&
+          'id' in value &&
+          'dataURL' in value &&
+          'created' in value
+        ) {
+          const fileValue = value as Record<string, unknown>;
+          const mimeType = String(fileValue.mimeType);
+          binaryFiles[key] = {
+            mimeType: mimeType as BinaryFileData["mimeType"],
+            id: String(fileValue.id),
+            dataURL: String(fileValue.dataURL),
+            created: Number(fileValue.created),
+          } as BinaryFileData;
+        }
+      });
+
       return {
         elements: activeTab.data.elements,
         appState: safeAppState,
-        files: activeTab.data.files,
+        files: binaryFiles,
       };
     }
     return undefined;
@@ -292,13 +305,11 @@ export default function Whiteboard({ username }: WhiteboardProps) {
 
   // Track previous tab ID for room switching
   const prevActiveTabIdRef = useRef<string | null>(null);
+  const roomId = getActiveTabRoomId();
 
   // Initialize element sync when room changes
   useEffect(() => {
-    if (!isReady) return;
-
-    const roomId = getActiveTabRoomId();
-    if (!roomId) return;
+    if (!isReady || !roomId) return;
 
     // Only proceed if tab actually changed (avoid redundant reconnections)
     if (prevActiveTabIdRef.current === roomId) {
@@ -331,7 +342,7 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       // Note: We don't leave room here to avoid disconnections on re-renders
       // Room cleanup happens when switching to a different room
     };
-  }, [activeTabId, username, isReady]);
+  }, [roomId, username, isReady]);
 
   // Handle initial room state when joining a room
   useEffect(() => {
@@ -405,28 +416,19 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   );
 
   // Debounced save handler for performance optimization
-  const debouncedSave = useMemo(
-    () =>
-      debounce(
-        (
-          tabId: string,
-          elements: readonly unknown[],
-          appState: AppState,
-          files: Record<string, unknown>,
-        ) => {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { collaborators, ...safeAppState } = appState;
-          saveTabState(
-            tabId,
-            elements as readonly unknown[],
-            safeAppState,
-            files,
-          );
-        },
-        500,
-      ), // 500ms debounce delay
-    [saveTabState],
-  );
+  const debouncedSave = useMemo(() => {
+    const saveFn = (
+      tabId: string,
+      elements: readonly OrderedExcalidrawElement[],
+      appState: AppState,
+      files: Record<string, unknown>,
+    ) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { collaborators, ...safeAppState } = appState;
+      saveTabState(tabId, elements, safeAppState, files);
+    };
+    return debounce(saveFn, 500) as typeof saveFn;
+  }, [saveTabState]); // 500ms debounce delay
 
   const handleChange = useCallback(
     (
@@ -605,10 +607,7 @@ export default function Whiteboard({ username }: WhiteboardProps) {
 
   // Initialize cursor tracking when Excalidraw is ready
   useEffect(() => {
-    if (!excalidrawAPI || !isReady) return;
-
-    const roomId = getActiveTabRoomId();
-    if (!roomId) return;
+    if (!excalidrawAPI || !isReady || !roomId) return;
 
     // Start cursor tracking
     cursorService.startTracking(() => {
@@ -622,7 +621,7 @@ export default function Whiteboard({ username }: WhiteboardProps) {
     return () => {
       cursorService.stopTracking();
     };
-  }, [excalidrawAPI, isReady, activeTabId, getActiveTabRoomId]);
+  }, [excalidrawAPI, isReady, activeTabId, roomId]);
 
   if (!isReady) {
     return (

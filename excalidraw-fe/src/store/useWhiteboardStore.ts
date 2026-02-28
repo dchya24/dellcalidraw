@@ -1,15 +1,17 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
+import type { AppState } from "@excalidraw/excalidraw/types";
+import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 
 export interface WhiteboardTab {
   id: string;
   title: string;
   roomId: string;
   data: {
-    elements: readonly any[];
-    appState: Partial<any>;
-    files: any;
+    elements: readonly OrderedExcalidrawElement[];
+    appState: Partial<AppState>;
+    files: Record<string, unknown>;
   };
   lastModified: number;
 }
@@ -38,7 +40,12 @@ interface AppStore {
   removeTab: (tabId: string) => void;
   renameTab: (tabId: string, newTitle: string) => void;
   setActiveTab: (tabId: string) => void;
-  saveTabState: (tabId: string, elements: any, appState: any, files: any) => void;
+  saveTabState: (
+    tabId: string,
+    elements: readonly OrderedExcalidrawElement[],
+    appState: Partial<AppState>,
+    files: Record<string, unknown>
+  ) => void;
   regenerateRoomId: (tabId: string) => void;
 
   // Getters
@@ -48,7 +55,11 @@ interface AppStore {
 
   // Import/Export (per file)
   loadFromFile: (data: { tabs: WhiteboardTab[]; activeTabId: string }) => void;
-  loadNativeExcalidraw: (elements: any, appState: any, files: any) => void;
+  loadNativeExcalidraw: (
+    elements: readonly OrderedExcalidrawElement[],
+    appState: Partial<AppState>,
+    files: Record<string, unknown>
+  ) => void;
   getExportData: () => { tabs: WhiteboardTab[]; activeTabId: string };
 }
 
@@ -182,7 +193,12 @@ export const useWhiteboardStore = create<AppStore>()(
         }));
       },
 
-      saveTabState: (tabId: string, elements: any, appState: any, files: any) => {
+      saveTabState: (
+        tabId: string,
+        elements: readonly OrderedExcalidrawElement[],
+        appState: Partial<AppState>,
+        files: Record<string, unknown>
+      ) => {
         const { activeFileId } = get();
         set((state) => {
           const fileIndex = state.files.findIndex((f) => f.id === activeFileId);
@@ -276,7 +292,11 @@ export const useWhiteboardStore = create<AppStore>()(
         }));
       },
 
-      loadNativeExcalidraw: (elements: any, appState: any, files: any) => {
+      loadNativeExcalidraw: (
+        elements: readonly OrderedExcalidrawElement[],
+        appState: Partial<AppState>,
+        files: Record<string, unknown>
+      ) => {
         const { activeFileId } = get();
         set((state) => ({
           files: state.files.map((f) => {

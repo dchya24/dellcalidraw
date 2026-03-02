@@ -110,10 +110,10 @@ export default function TabBar({ onTabChange, onAddTab, onDeleteRequest, handleF
           className={`flex items-center gap-1 px-3 py-1 rounded-md cursor-pointer min-w-[25] max-w-[45] group transition-colors ${
             activeTabId === tab.id
               ? theme === "dark"
-                ? "bg-gray-700 border-t border-l border-r border-gray-600 -mb-px"
+                ? "bg-gray-700 border-t border-l border-r border-gray-600 -mb-px text-gray-300"
                 : "bg-white border-t border-l border-r border-gray-300 -mb-px"
               : theme === "dark"
-                ? "bg-gray-700/50 hover:bg-gray-600"
+                ? "bg-gray-700/50 hover:bg-gray-600 text-gray-300"
                 : "bg-gray-200 hover:bg-gray-300"
           }`}
         >

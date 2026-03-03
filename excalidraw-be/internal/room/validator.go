@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	MaxElementSize      = 10240 // 10KB max per element
-	MaxElementsPerRoom  = 5000  // Maximum elements per room
-	MaxStringLength     = 1000  // Max string length for text fields
+	MaxElementSize     = 10240 // 10KB max per element
+	MaxElementsPerRoom = 5000  // Maximum elements per room
+	MaxStringLength    = 1000  // Max string length for text fields
 )
 
 var validElementTypes = regexp.MustCompile(`^(rectangle|ellipse|arrow|line|freedraw|text|image)$`)

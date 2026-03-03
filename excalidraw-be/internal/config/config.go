@@ -8,10 +8,10 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig `mapstructure:"server"`
+	Server    ServerConfig    `mapstructure:"server"`
 	WebSocket WebSocketConfig `mapstructure:"websocket"`
-	Room RoomConfig `mapstructure:"room"`
-	Log LogConfig `mapstructure:"log"`
+	Room      RoomConfig      `mapstructure:"room"`
+	Log       LogConfig       `mapstructure:"log"`
 }
 
 type ServerConfig struct {
@@ -22,8 +22,8 @@ type ServerConfig struct {
 }
 
 type WebSocketConfig struct {
-	ReadBufferSize  int `mapstructure:"read_buffer_size"`
-	WriteBufferSize int `mapstructure:"write_buffer_size"`
+	ReadBufferSize  int           `mapstructure:"read_buffer_size"`
+	WriteBufferSize int           `mapstructure:"write_buffer_size"`
 	PingPeriod      time.Duration `mapstructure:"ping_period"`
 	PongWait        time.Duration `mapstructure:"pong_wait"`
 }

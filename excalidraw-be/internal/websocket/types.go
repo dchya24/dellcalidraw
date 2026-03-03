@@ -8,7 +8,7 @@ type WSMessage struct {
 
 // Client → Server message types
 type JoinRoomPayload struct {
-	RoomID  string `json:"roomId"`
+	RoomID   string `json:"roomId"`
 	Username string `json:"username"`
 }
 
@@ -17,7 +17,7 @@ type LeaveRoomPayload struct {
 }
 
 type UpdateElementsPayload struct {
-	RoomID string `json:"roomId"`
+	RoomID  string         `json:"roomId"`
 	Changes ElementChanges `json:"changes"`
 }
 
@@ -42,7 +42,7 @@ type ElementPayload struct {
 }
 
 type CursorMovePayload struct {
-	RoomID   string  `json:"roomId"`
+	RoomID   string   `json:"roomId"`
 	Position Position `json:"position"`
 }
 
@@ -79,9 +79,9 @@ type ElementsUpdatedPayload struct {
 }
 
 type CursorUpdatedPayload struct {
-	UserID   string  `json:"userId"`
-	Username string  `json:"username"`
-	Color    string  `json:"color"`
+	UserID   string   `json:"userId"`
+	Username string   `json:"username"`
+	Color    string   `json:"color"`
 	Position Position `json:"position"`
 }
 

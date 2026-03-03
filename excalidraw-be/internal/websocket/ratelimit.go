@@ -20,12 +20,12 @@ type RateLimiter struct {
 // NewRateLimiter creates a new rate limiter
 func NewRateLimiter() *RateLimiter {
 	rl := &RateLimiter{
-		lastMessageTime:     make(map[string]time.Time),
-		messageCount:        make(map[string]int),
-		windowStart:         make(map[string]time.Time),
-		maxMessagesPerSecond: 20, // Allow 20 messages per second
+		lastMessageTime:      make(map[string]time.Time),
+		messageCount:         make(map[string]int),
+		windowStart:          make(map[string]time.Time),
+		maxMessagesPerSecond: 20,  // Allow 20 messages per second
 		maxMessagesPerWindow: 100, // Allow 100 messages per 10 seconds
-		windowDuration:      10 * time.Second,
+		windowDuration:       10 * time.Second,
 	}
 
 	// Start cleanup goroutine
@@ -95,15 +95,15 @@ func (rl *RateLimiter) cleanup() {
 
 // CursorRateLimiter is specifically for cursor updates (higher frequency allowed)
 type CursorRateLimiter struct {
-	mu              sync.RWMutex
-	lastUpdateTime  map[string]time.Time
+	mu                  sync.RWMutex
+	lastUpdateTime      map[string]time.Time
 	maxUpdatesPerSecond int
 }
 
 // NewCursorRateLimiter creates a new cursor rate limiter
 func NewCursorRateLimiter() *CursorRateLimiter {
 	return &CursorRateLimiter{
-		lastUpdateTime:     make(map[string]time.Time),
+		lastUpdateTime:      make(map[string]time.Time),
 		maxUpdatesPerSecond: 20, // Allow 20 cursor updates per second
 	}
 }

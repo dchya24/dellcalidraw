@@ -7,35 +7,35 @@ import (
 
 // Element represents a whiteboard element (rectangle, ellipse, arrow, text, etc.)
 type Element struct {
-	ID      string                 `json:"id"`
-	Type    string                 `json:"type"`
-	X       float64                `json:"x"`
-	Y       float64                `json:"y"`
-	Width   float64                `json:"width,omitempty"`
-	Height  float64                `json:"height,omitempty"`
-	Angle   float64                `json:"angle,omitempty"`
-	Stroke  string                 `json:"stroke,omitempty"`
-	Background string              `json:"background,omitempty"`
-	Fill    string                 `json:"fill,omitempty"`
-	Data    map[string]interface{} `json:"data,omitempty"`
+	ID         string                 `json:"id"`
+	Type       string                 `json:"type"`
+	X          float64                `json:"x"`
+	Y          float64                `json:"y"`
+	Width      float64                `json:"width,omitempty"`
+	Height     float64                `json:"height,omitempty"`
+	Angle      float64                `json:"angle,omitempty"`
+	Stroke     string                 `json:"stroke,omitempty"`
+	Background string                 `json:"background,omitempty"`
+	Fill       string                 `json:"fill,omitempty"`
+	Data       map[string]interface{} `json:"data,omitempty"`
 }
 
 // User represents a participant in a room
 type User struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	Color     string    `json:"color"`
-	ConnID    string    `json:"connId"`
-	JoinedAt  time.Time `json:"joinedAt"`
-	LastSeen  time.Time `json:"lastSeen"`
-	IsIdle    bool      `json:"isIdle"`
+	ID       string    `json:"id"`
+	Username string    `json:"username"`
+	Color    string    `json:"color"`
+	ConnID   string    `json:"connId"`
+	JoinedAt time.Time `json:"joinedAt"`
+	LastSeen time.Time `json:"lastSeen"`
+	IsIdle   bool      `json:"isIdle"`
 }
 
 // Cursor represents the current cursor position of a user
 type Cursor struct {
-	UserID  string  `json:"userId"`
-	X       float64 `json:"x"`
-	Y       float64 `json:"y"`
+	UserID  string    `json:"userId"`
+	X       float64   `json:"x"`
+	Y       float64   `json:"y"`
 	Updated time.Time `json:"updated"`
 }
 
@@ -43,7 +43,7 @@ type Cursor struct {
 type Room struct {
 	ID           string
 	Elements     []Element
-	Participants map[string]*User  // userID -> User
+	Participants map[string]*User   // userID -> User
 	Cursors      map[string]*Cursor // userID -> Cursor
 	CreatedAt    time.Time
 	LastActivity time.Time

@@ -3,13 +3,14 @@ FROM golang:1.24-alpine
 WORKDIR /app
 
 # Install development tools
-RUN apk add --no-cache git air
 
 # Copy go mod files
 COPY go.mod go.sum ./
 
 # Download dependencies
 RUN go mod download
+
+RUN go install github.com/air-verse/air@latest
 
 # Copy source code
 COPY . .

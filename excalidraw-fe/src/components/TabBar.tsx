@@ -107,7 +107,7 @@ export default function TabBar({ onTabChange, onAddTab, onDeleteRequest, handleF
         <div
           key={tab.id}
           onClick={() => handleTabClick(tab.id)}
-          className={`flex items-center gap-1 px-3 py-1 rounded-md cursor-pointer min-w-[25] max-w-[45] group transition-colors ${
+          className={`flex items-center gap-1 px-3 py-1 rounded-md cursor-pointer min-w-[25] group transition-colors ${
             activeTabId === tab.id
               ? theme === "dark"
                 ? "bg-gray-700 border-t border-l border-r border-gray-600 -mb-px text-gray-300"

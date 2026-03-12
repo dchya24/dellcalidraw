@@ -89,3 +89,26 @@ type ErrorPayload struct {
 	Message string `json:"message"`
 	Code    string `json:"code,omitempty"`
 }
+
+// Room Link Management (Phase 5)
+type GetRoomLinkPayload struct {
+	RoomID string `json:"roomId"`
+}
+
+type RoomLinkPayload struct {
+	ShareURL string `json:"shareUrl"`
+	QRCode   string `json:"qrCode,omitempty"`
+}
+
+// Selection & Interaction Awareness (Phase 6)
+type SelectionChangePayload struct {
+	RoomID      string   `json:"roomId"`
+	SelectedIDs []string `json:"selectedIds"`
+}
+
+type SelectionUpdatedPayload struct {
+	UserID      string   `json:"userId"`
+	Username    string   `json:"username"`
+	Color       string   `json:"color"`
+	SelectedIDs []string `json:"selectedIds"`
+}

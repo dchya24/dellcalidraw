@@ -113,3 +113,22 @@ export interface ErrorPayload {
   message: string;
   code?: string;
 }
+
+export interface SelectionChangePayload {
+  roomId: string;
+  selectedIds: string[];
+}
+
+export interface SelectionUpdatedPayload {
+  userId: string;
+  username: string;
+  color: string;
+  selectedIds: string[];
+}
+
+export interface ElementSelection {
+  userId: string;
+  username: string;
+  color: string;
+  selectedIds: string[];
+}

@@ -63,11 +63,12 @@ type Cursor struct {
 type Room struct {
 	ID           string
 	Elements     []Element
-	Participants map[string]*User   // userID -> User
-	Cursors      map[string]*Cursor // userID -> Cursor
+	Participants map[string]*User    // userID -> User
+	Cursors      map[string]*Cursor  // userID -> Cursor
+	SelectedIDs  map[string][]string // userID -> selected element IDs (Phase 6)
 	CreatedAt    time.Time
 	LastActivity time.Time
-	mu           sync.RWMutex
+	Mu           sync.RWMutex
 }
 
 // NewRoom creates a new room with the given ID
@@ -84,16 +85,16 @@ func NewRoom(id string) *Room {
 
 // AddUser adds a user to the room
 func (r *Room) AddUser(user *User) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
 	r.Participants[user.ID] = user
 	r.LastActivity = time.Now()
 }
 
 // RemoveUser removes a user from the room
 func (r *Room) RemoveUser(userID string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
 	delete(r.Participants, userID)
 	delete(r.Cursors, userID)
 	r.LastActivity = time.Now()
@@ -101,8 +102,8 @@ func (r *Room) RemoveUser(userID string) {
 
 // GetParticipants returns a copy of the participants list
 func (r *Room) GetParticipants() []*User {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.Mu.RLock()
+	defer r.Mu.RUnlock()
 
 	users := make([]*User, 0, len(r.Participants))
 	for _, user := range r.Participants {
@@ -113,23 +114,23 @@ func (r *Room) GetParticipants() []*User {
 
 // GetParticipantCount returns the number of participants
 func (r *Room) GetParticipantCount() int {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.Mu.RLock()
+	defer r.Mu.RUnlock()
 	return len(r.Participants)
 }
 
 // AddElements adds new elements to the room
 func (r *Room) AddElements(elements []Element) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
 	r.Elements = append(r.Elements, elements...)
 	r.LastActivity = time.Now()
 }
 
 // UpdateElements updates existing elements in the room
 func (r *Room) UpdateElements(elements []Element) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
 
 	elementMap := make(map[string]Element)
 	for _, elem := range r.Elements {
@@ -149,8 +150,8 @@ func (r *Room) UpdateElements(elements []Element) {
 
 // DeleteElements removes elements by their IDs
 func (r *Room) DeleteElements(elementIDs []string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
 
 	idSet := make(map[string]bool)
 	for _, id := range elementIDs {
@@ -169,8 +170,8 @@ func (r *Room) DeleteElements(elementIDs []string) {
 
 // GetElements returns a copy of the elements list
 func (r *Room) GetElements() []Element {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.Mu.RLock()
+	defer r.Mu.RUnlock()
 
 	elements := make([]Element, len(r.Elements))
 	copy(elements, r.Elements)
@@ -179,8 +180,8 @@ func (r *Room) GetElements() []Element {
 
 // UpdateCursor updates a user's cursor position
 func (r *Room) UpdateCursor(userID string, x, y float64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
 	r.Cursors[userID] = &Cursor{
 		UserID:  userID,
 		X:       x,
@@ -190,10 +191,43 @@ func (r *Room) UpdateCursor(userID string, x, y float64) {
 	r.LastActivity = time.Now()
 }
 
+// GetSelectedIDs returns selected element IDs for a user
+func (r *Room) GetSelectedIDs(userID string) []string {
+	r.Mu.RLock()
+	defer r.Mu.Unlock()
+
+	if selected, exists := r.SelectedIDs[userID]; exists {
+		return selected
+	}
+	return []string{}
+}
+
+// UpdateSelectedIDs updates a user's selected element IDs
+func (r *Room) UpdateSelectedIDs(userID string, elementIDs []string) {
+	r.Mu.RLock()
+	defer r.Mu.RUnlock()
+
+	// Make a copy to avoid modifying the original slice
+	ids := make([]string, len(elementIDs))
+	copy(ids, elementIDs)
+
+	r.SelectedIDs[userID] = ids
+	r.LastActivity = time.Now()
+}
+
+// ClearSelectedIDs removes all selected elements for a user
+func (r *Room) ClearSelectedIDs(userID string) {
+	r.Mu.RLock()
+	defer r.Mu.RUnlock()
+
+	delete(r.SelectedIDs, userID)
+	r.LastActivity = time.Now()
+}
+
 // GetCursors returns a copy of the cursors map
 func (r *Room) GetCursors() []*Cursor {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.Mu.RLock()
+	defer r.Mu.RUnlock()
 
 	cursors := make([]*Cursor, 0, len(r.Cursors))
 	for _, cursor := range r.Cursors {
@@ -204,21 +238,21 @@ func (r *Room) GetCursors() []*Cursor {
 
 // UpdateActivity updates the last activity timestamp
 func (r *Room) UpdateActivity() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
 	r.LastActivity = time.Now()
 }
 
 // IsInactive checks if the room is inactive based on the given timeout
 func (r *Room) IsInactive(timeout time.Duration) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.Mu.RLock()
+	defer r.Mu.RUnlock()
 	return time.Since(r.LastActivity) > timeout
 }
 
 // HasCapacity checks if the room has capacity for more users
 func (r *Room) HasCapacity(maxCapacity int) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.Mu.RLock()
+	defer r.Mu.RUnlock()
 	return len(r.Participants) < maxCapacity
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -65,6 +66,7 @@ func main() {
 		r.Use(middleware.AllowContentType("application/json"))
 		r.Get("/health", healthHandler)
 		r.Get("/api/stats", statsHandler(roomManager))
+		r.Get("/api/rooms/:id/link", roomLinkHandler)
 	})
 
 	// Start server
@@ -121,6 +123,24 @@ func statsHandler(rm *room.RoomManager) http.HandlerFunc {
 		stats["timestamp"] = time.Now().UTC()
 		json.NewEncoder(w).Encode(stats)
 	}
+}
+
+// roomLinkHandler handles GET /api/rooms/:id/link (Phase 5)
+func roomLinkHandler(w http.ResponseWriter, r *http.Request) {
+	roomID := chi.URLParam(r, "id")
+
+	// Generate shareable link
+	shareURL := fmt.Sprintf("%s?room=%s", "http://localhost:3000", roomID)
+
+	// TODO: Add QR code generation (optional for Phase 5)
+
+	// Response
+	response := map[string]interface{}{
+		"shareUrl": shareURL,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 func initLogger(cfg config.LogConfig) (*zap.Logger, error) {

@@ -14,6 +14,7 @@ import { useThemeStore } from "../store/useThemeStore";
 import { roomService } from "../services/roomService";
 import { elementSyncService } from "../services/elementSyncService";
 import { cursorService } from "../services/cursorService";
+import { selectionService } from "../services/selectionService";
 import TabBar from "./TabBar";
 import Toolbar from "./Toolbar";
 import ConfirmDialog from "./ConfirmDialog";
@@ -361,19 +362,26 @@ export default function Whiteboard({ username }: WhiteboardProps) {
     }
 
     console.log(
-      "🔄 Initializing element sync for room:",
+      "🔄 Initializing sync services for room:",
       roomId,
       "username:",
       username,
     );
     elementSyncService.enableSync();
+    selectionService.startTracking();
 
-    // Note: Auto-connect disabled - users must manually join via CollaborationPanel
-    // roomService.joinRoom(roomId, username).catch((error) => {
-    //   console.error('❌ Failed to join room:', error);
-    // });
+    // Auto-join if room is in URL query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlRoomId = urlParams.get('room');
+    if (urlRoomId && urlRoomId === roomId) {
+      console.log('🔗 Auto-joining room from URL:', roomId);
+      roomService.joinRoom(roomId, username).catch((error) => {
+        console.error('❌ Failed to auto-join room:', error);
+      });
+    }
 
     return () => {
+      selectionService.stopTracking();
       // Note: We don't leave room here to avoid disconnections on re-renders
       // Room cleanup happens when switching to a different room
     };
@@ -715,6 +723,28 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       cursorService.stopTracking();
     };
   }, [excalidrawAPI, isReady, activeTabId, roomId]);
+
+  // Track selection changes
+  useEffect(() => {
+    if (!excalidrawAPI || !isReady || !roomId) return;
+
+    // Poll for selection changes
+    const selectionInterval = setInterval(() => {
+      const appState = excalidrawAPI.getAppState();
+      const selectedElementIds = appState.selectedElementIds;
+      // Convert to array if it's a Set-like object
+      const idsArray = Array.isArray(selectedElementIds)
+        ? selectedElementIds
+        : selectedElementIds
+        ? Object.keys(selectedElementIds)
+        : [];
+      selectionService.updateSelection(idsArray);
+    }, 200); // Check every 200ms
+
+    return () => {
+      clearInterval(selectionInterval);
+    };
+  }, [excalidrawAPI, isReady, roomId]);
 
   if (!isReady) {
     return (

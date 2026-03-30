@@ -177,9 +177,108 @@ func (h *Hub) handleMessage(conn *Connection, message []byte) {
 	case "cursor_move":
 		slog.Info("🖱️ Routing to handleCursorMove", "connID", conn.ID)
 		h.handleCursorMove(conn, wsMsg.Payload)
+	case "get_room_link":
+		slog.Info("🔗 Routing to handleGetRoomLink", "connID", conn.ID)
+		h.handleGetRoomLink(conn, wsMsg.Payload)
+	case "selection_change":
+		slog.Info("👆 Routing to handleSelectionChange", "connID", conn.ID)
+		h.handleSelectionChange(conn, wsMsg.Payload)
 	default:
 		slog.Warn("❓ Unknown message type", "type", wsMsg.Type, "connID", conn.ID)
 	}
+}
+
+// handleGetRoomLink handles get_room_link messages (Phase 5)
+func (h *Hub) handleGetRoomLink(conn *Connection, payload map[string]interface{}) {
+	// Parse payload
+	data, err := json.Marshal(payload)
+	if err != nil {
+		h.sendError(conn, "Invalid payload", "invalid_payload")
+		return
+	}
+
+	var linkMsg GetRoomLinkPayload
+	if err := json.Unmarshal(data, &linkMsg); err != nil {
+		h.sendError(conn, "Invalid room link payload", "invalid_payload")
+		return
+	}
+
+	// Get room
+	r := h.roomManager.GetRoom(linkMsg.RoomID)
+	if r == nil {
+		h.sendError(conn, "Room not found", "room_not_found")
+		return
+	}
+
+	// Generate shareable link
+	shareURL := fmt.Sprintf("%s?room=%s", "http://localhost:3000", linkMsg.RoomID)
+
+	// Send room link
+	linkPayload := RoomLinkPayload{
+		ShareURL: shareURL,
+	}
+	h.sendMessage(conn, "room_link", linkPayload)
+
+	slog.Info("Room link generated", "roomID", linkMsg.RoomID, "shareURL", shareURL)
+}
+
+// handleSelectionChange handles selection_change messages (Phase 6)
+func (h *Hub) handleSelectionChange(conn *Connection, payload map[string]interface{}) {
+	// Parse payload
+	data, err := json.Marshal(payload)
+	if err != nil {
+		h.sendError(conn, "Invalid payload", "invalid_payload")
+		return
+	}
+
+	var selectionMsg SelectionChangePayload
+	if err := json.Unmarshal(data, &selectionMsg); err != nil {
+		h.sendError(conn, "Invalid selection change payload", "invalid_payload")
+		return
+	}
+
+	// Get room
+	r := h.roomManager.GetRoom(selectionMsg.RoomID)
+	if r == nil {
+		h.sendError(conn, "Room not found", "room_not_found")
+		return
+	}
+
+	// Update user's selected elements
+	r.UpdateSelectedIDs(conn.UserID, selectionMsg.SelectedIDs)
+
+	// Broadcast selection to other participants
+	selectionUpdated := SelectionUpdatedPayload{
+		UserID:      conn.UserID,
+		Username:    getUsernameFromRoom(r, conn.UserID),
+		Color:       getUserColorFromRoom(r, conn.UserID),
+		SelectedIDs: selectionMsg.SelectedIDs,
+	}
+	h.broadcastToRoom(selectionMsg.RoomID, "selection_updated", selectionUpdated, conn.ID)
+
+	slog.Info("Selection updated", "userID", conn.UserID, "selectedIds", selectionMsg.SelectedIDs, "roomID", selectionMsg.RoomID)
+}
+
+// Helper function to get username from room
+func getUsernameFromRoom(r *room.Room, userID string) string {
+	r.Mu.RLock()
+	defer r.Mu.RUnlock()
+
+	if user, exists := r.Participants[userID]; exists {
+		return user.Username
+	}
+	return ""
+}
+
+// Helper function to get user color from room
+func getUserColorFromRoom(r *room.Room, userID string) string {
+	r.Mu.RLock()
+	defer r.Mu.RUnlock()
+
+	if user, exists := r.Participants[userID]; exists {
+		return user.Color
+	}
+	return ""
 }
 
 // handleJoinRoom handles join_room messages

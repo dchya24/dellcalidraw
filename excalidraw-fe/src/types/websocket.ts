@@ -4,8 +4,15 @@ export interface WSMessage<T = unknown> {
   payload: T;
 }
 
-// Element Types
-export interface Element {
+// WebSocket Message Types
+export interface WSMessage<T = unknown> {
+  type: string;
+  payload: T;
+}
+
+// Element Types - Matches backend ElementPayload
+// Renamed from Element to ExcalidrawElementPayload to avoid DOM Element conflict
+export interface ExcalidrawElementPayload {
   id: string;
   type: string;
   x: number;
@@ -13,10 +20,33 @@ export interface Element {
   width?: number;
   height?: number;
   angle?: number;
-  stroke?: string;
-  background?: string;
-  fill?: string;
+  strokeColor?: string;
+  backgroundColor?: string;
+  fillStyle?: string;
+  strokeWidth?: number;
+  strokeStyle?: string;
+  roughness?: number;
+  opacity?: number;
+  seed?: number;
+  version?: number;
+  versionNonce?: number;
+  isDeleted?: boolean;
+  groupIds?: string[];
+  frameId?: string | null;
+  boundElements?: BoundElementPayload[];
+  updated?: number;
+  link?: string | null;
+  locked?: boolean;
   data?: Record<string, unknown>;
+}
+
+// Keep Element as alias for backward compatibility
+/** @deprecated Use ExcalidrawElementPayload instead */
+export type Element = ExcalidrawElementPayload;
+
+export interface BoundElementPayload {
+  id: string;
+  type: "arrow" | "text";
 }
 
 // User Types

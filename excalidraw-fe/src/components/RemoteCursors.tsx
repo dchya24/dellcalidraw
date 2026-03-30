@@ -1,26 +1,48 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { cursorService } from "../services/cursorService";
 import type { RemoteCursor } from "../types/websocket";
 import { useThemeStore } from "../store/useThemeStore";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 interface RemoteCursorWithPosition extends RemoteCursor {
   x: number;
   y: number;
 }
 
-export default function RemoteCursors() {
+interface RemoteCursorsProps {
+  excalidrawAPI: ExcalidrawImperativeAPI | null;
+}
+
+export default function RemoteCursors({ excalidrawAPI }: RemoteCursorsProps) {
   const { theme } = useThemeStore();
   const [cursors, setCursors] = useState<RemoteCursorWithPosition[]>([]);
+
+  // Transform canvas coordinates to screen coordinates
+  const transformToScreen = useCallback((canvasX: number, canvasY: number) => {
+    if (!excalidrawAPI) return { x: 0, y: 0 };
+
+    const appState = excalidrawAPI.getAppState();
+    const zoom = appState.zoom?.value || 1;
+    
+    // Transform canvas coordinates to screen coordinates
+    const screenX = canvasX * zoom + appState.scrollX + appState.offsetLeft;
+    const screenY = canvasY * zoom + appState.scrollY + appState.offsetTop;
+    
+    return { x: screenX, y: screenY };
+  }, [excalidrawAPI]);
 
   useEffect(() => {
     // Subscribe to cursor updates
     const unsubscribeUpdated = cursorService.onCursorUpdated((cursor) => {
+      // Transform canvas coordinates to screen coordinates
+      const { x: screenX, y: screenY } = transformToScreen(cursor.position.x, cursor.position.y);
+      
       setCursors(prev => {
         const existing = prev.findIndex(c => c.userId === cursor.userId);
         const newCursor: RemoteCursorWithPosition = {
           ...cursor,
-          x: cursor.position.x,
-          y: cursor.position.y,
+          x: screenX,
+          y: screenY,
         };
 
         if (existing >= 0) {
@@ -42,7 +64,22 @@ export default function RemoteCursors() {
       unsubscribeUpdated();
       unsubscribeRemoved();
     };
-  }, []);
+  }, [transformToScreen]);
+
+  // Update cursor positions when zoom/scroll changes
+  useEffect(() => {
+    if (!excalidrawAPI || cursors.length === 0) return;
+
+    // Re-transform all cursors when viewport changes
+    setCursors(prev => prev.map(cursor => {
+      const { x: screenX, y: screenY } = transformToScreen(cursor.position.x, cursor.position.y);
+      return {
+        ...cursor,
+        x: screenX,
+        y: screenY,
+      };
+    }));
+  }, [excalidrawAPI, transformToScreen]); // Re-run when excalidrawAPI reference changes (indicates viewport change)
 
   if (cursors.length === 0) return null;
 

@@ -4,13 +4,13 @@ import type {
   UpdateElementsPayload,
   ElementChanges,
   ElementsUpdatedPayload,
-  Element,
+  ExcalidrawElementPayload,
 } from '../types/websocket';
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import { debounce } from '../utils/debounce';
 
 class ElementSyncService {
-  private localElements: Map<string, Element> = new Map();
+  private localElements: Map<string, ExcalidrawElementPayload> = new Map();
   private isSyncEnabled: boolean = false;
   private elementUpdateListeners: Set<(payload: ElementsUpdatedPayload) => void> = new Set();
   private pendingChanges: ElementChanges | null = null;
@@ -211,7 +211,7 @@ class ElementSyncService {
     });
   }
 
-  private convertToBackendElement(excalidrawEl: OrderedExcalidrawElement): Element {
+  private convertToBackendElement(excalidrawEl: OrderedExcalidrawElement): ExcalidrawElementPayload {
     return {
       id: excalidrawEl.id,
       type: excalidrawEl.type,
@@ -220,42 +220,68 @@ class ElementSyncService {
       width: excalidrawEl.width,
       height: excalidrawEl.height,
       angle: excalidrawEl.angle,
-      stroke: excalidrawEl.strokeColor,
-      background: excalidrawEl.backgroundColor,
-      fill: excalidrawEl.fillStyle,
-      data: {
-        // Store additional Excalidraw-specific data
-        version: (excalidrawEl as Record<string, unknown>).version,
-        versionNonce: (excalidrawEl as Record<string, unknown>).versionNonce,
-        isDeleted: (excalidrawEl as Record<string, unknown>).isDeleted,
-        seed: (excalidrawEl as Record<string, unknown>).seed,
-        groupIds: (excalidrawEl as Record<string, unknown>).groupIds,
-        frameId: (excalidrawEl as Record<string, unknown>).frameId,
-        index: (excalidrawEl as Record<string, unknown>).index,
-        roundness: (excalidrawEl as Record<string, unknown>).roundness,
-        boundElements: (excalidrawEl as Record<string, unknown>).boundElements,
-      },
+      strokeColor: excalidrawEl.strokeColor,
+      backgroundColor: excalidrawEl.backgroundColor,
+      fillStyle: excalidrawEl.fillStyle,
+      strokeWidth: excalidrawEl.strokeWidth,
+      strokeStyle: excalidrawEl.strokeStyle,
+      roughness: excalidrawEl.roughness,
+      opacity: excalidrawEl.opacity,
+      seed: excalidrawEl.seed,
+      version: excalidrawEl.version,
+      versionNonce: excalidrawEl.versionNonce,
+      isDeleted: excalidrawEl.isDeleted,
+      groupIds: [...excalidrawEl.groupIds],
+      frameId: excalidrawEl.frameId,
+      boundElements: excalidrawEl.boundElements ? [...excalidrawEl.boundElements] : undefined,
+      updated: excalidrawEl.updated,
+      link: excalidrawEl.link,
+      locked: excalidrawEl.locked,
     };
   }
 
-  private convertToExcalidrawElement(backendEl: Element): OrderedExcalidrawElement {
+  private convertToExcalidrawElement(backendEl: ExcalidrawElementPayload): OrderedExcalidrawElement {
+    // Generate defaults for required fields
+    const seed = backendEl.seed ?? Math.floor(Math.random() * 1000000);
+    const version = backendEl.version ?? 1;
+    const versionNonce = backendEl.versionNonce ?? Math.floor(Math.random() * 1000000);
+    const updated = backendEl.updated ?? Date.now();
+
     return {
       id: backendEl.id,
       type: backendEl.type as OrderedExcalidrawElement["type"],
       x: backendEl.x,
       y: backendEl.y,
-      width: backendEl.width,
-      height: backendEl.height,
-      angle: backendEl.angle,
-      strokeColor: backendEl.stroke,
-      backgroundColor: backendEl.background,
-      fillStyle: backendEl.fill as OrderedExcalidrawElement["fillStyle"],
+      width: backendEl.width ?? 0,
+      height: backendEl.height ?? 0,
+      angle: backendEl.angle ?? 0,
+      strokeColor: backendEl.strokeColor ?? "#000000",
+      backgroundColor: backendEl.backgroundColor ?? "transparent",
+      fillStyle: (backendEl.fillStyle ?? "solid") as OrderedExcalidrawElement["fillStyle"],
+      strokeWidth: backendEl.strokeWidth ?? 1,
+      strokeStyle: (backendEl.strokeStyle ?? "solid") as OrderedExcalidrawElement["strokeStyle"],
+      roughness: backendEl.roughness ?? 1,
+      opacity: backendEl.opacity ?? 100,
+      seed,
+      version,
+      versionNonce,
+      index: null, // Will be set by Excalidraw
+      isDeleted: backendEl.isDeleted ?? false,
+      groupIds: backendEl.groupIds ?? [],
+      frameId: backendEl.frameId ?? null,
+      boundElements: backendEl.boundElements ?? null,
+      updated,
+      link: backendEl.link ?? null,
+      locked: backendEl.locked ?? false,
+      // Add roundness default
+      roundness: null as OrderedExcalidrawElement["roundness"],
+      // Merge any additional data
       ...(backendEl.data || {}),
     } as OrderedExcalidrawElement;
   }
 
-  private elementsDiffer(el1: Element, el2: Element): boolean {
-    // Compare key properties
+  private elementsDiffer(el1: ExcalidrawElementPayload, el2: ExcalidrawElementPayload): boolean {
+    // Compare key properties for change detection
     return (
       el1.type !== el2.type ||
       el1.x !== el2.x ||
@@ -263,9 +289,17 @@ class ElementSyncService {
       el1.width !== el2.width ||
       el1.height !== el2.height ||
       el1.angle !== el2.angle ||
-      el1.stroke !== el2.stroke ||
-      el1.background !== el2.background ||
-      el1.fill !== el2.fill
+      el1.strokeColor !== el2.strokeColor ||
+      el1.backgroundColor !== el2.backgroundColor ||
+      el1.fillStyle !== el2.fillStyle ||
+      el1.strokeWidth !== el2.strokeWidth ||
+      el1.strokeStyle !== el2.strokeStyle ||
+      el1.roughness !== el2.roughness ||
+      el1.opacity !== el2.opacity ||
+      el1.version !== el2.version ||
+      el1.versionNonce !== el2.versionNonce ||
+      el1.isDeleted !== el2.isDeleted ||
+      el1.locked !== el2.locked
     );
   }
 

@@ -441,3 +441,132 @@
 - **Medium Effort** - Requires more development but significant value (drag-reorder, search, thumbnails)
 - **Long-term** - Major features requiring substantial work (cloud integration, real-time sync, advanced collaboration)
 
+---
+
+## ✅ Phase 7: Real-Time Collaboration Stabilization (COMPLETE)
+**Date:** 2026-03-30
+
+### 🛠 Part 1 - Element Sync Fix
+
+**Backend Changes:**
+- **Extended `ElementPayload` struct** (`internal/websocket/types.go`):
+  - Added all Excalidraw-required fields: `seed`, `version`, `versionNonce`, `strokeWidth`, `strokeStyle`, `roughness`, `opacity`, `isDeleted`, `groupIds`, `frameId`, `boundElements`, `updated`, `link`, `locked`
+  - Renamed old fields to match Excalidraw naming: `stroke` → `strokeColor`, `background` → `backgroundColor`, `fill` → `fillStyle`
+  - Added `BoundElementPayload` type for bound element relationships
+
+- **Updated `room.Element` struct** (`internal/room/room.go`):
+  - Added `BoundElement` type for bound element relationships
+  - Extended element struct with all new fields to match frontend requirements
+
+- **Updated conversion functions** (`internal/websocket/handler.go`):
+  - `elementsToPayload()` - Now converts all fields including new properties
+  - `payloadToElements()` - Reconstructs full room.Element from payload
+  - Added `convertBoundElements()` and `convertPayloadBoundElements()` helpers
+
+**Frontend Changes:**
+- **Renamed `Element` type** (`src/types/websocket.ts`):
+  - Renamed to `ExcalidrawElementPayload` to avoid conflict with DOM `Element` type
+  - Kept `Element` as deprecated alias for backward compatibility
+  - Extended with all new fields matching backend
+
+- **Updated `convertBackendToExcalidraw()`** (`src/components/Whiteboard.tsx`):
+  - Now generates defaults for all required Excalidraw properties
+  - Generates `seed` (random), `version` (1), `versionNonce` (random), `updated` (timestamp) if missing
+  - Properly handles all element types with complete property mapping
+  - Removed unused `convertExcalidrawToBackend()` (handled by elementSyncService)
+
+- **Updated `elementSyncService`** (`src/services/elementSyncService.ts`):
+  - `convertToBackendElement()` - Now serializes all Excalidraw properties
+  - `convertToExcalidrawElement()` - Reconstructs full element with all required fields
+  - `elementsDiffer()` - Compares all relevant properties for change detection
+  - Updated all type references from `Element` to `ExcalidrawElementPayload`
+
+### 🛠 Part 2 - Cursor, Auto-Join & Conflict UI
+
+**Remote Cursor Coordinate Transformation** (`src/components/Whiteboard.tsx`, `src/components/RemoteCursors.tsx`, `src/services/cursorService.ts`):
+- Fixed coordinate transformation between screen and canvas space
+- Mouse position tracking in screen coordinates
+- Transform to canvas coordinates before sending to backend:
+  ```
+  canvasX = (screenX - offsetLeft - scrollX) / zoom
+  canvasY = (screenY - offsetTop - scrollY) / zoom
+  ```
+- Transform back to screen coordinates for rendering remote cursors:
+  ```
+  screenX = canvasX * zoom + scrollX + offsetLeft
+  screenY = canvasY * zoom + scrollY + offsetTop
+  ```
+- Cursors update when zoom/scroll changes to maintain correct positioning
+- Added `excalidrawAPI` prop to `RemoteCursors` component for viewport state access
+
+**Room Auto-Join with Invite Flow** (`src/components/RoomInviteDialog.tsx`, `src/utils/roomURL.ts`):
+- New `RoomInviteDialog` component for confirmation modal
+- Detects `?room={roomId}` in URL on app load
+- Shows professional invite dialog with:
+  - Room ID display
+  - User avatar with color
+  - Username confirmation
+  - Join/Cancel buttons
+  - Error handling
+- Clears URL query param after join or cancel
+- Loading state during connection
+
+**Conflict Resolution UI Panel** (`src/components/ConflictResolutionPanel.tsx`, `src/components/Whiteboard.tsx`):
+- New `ConflictResolutionPanel` component showing changes from other users
+- Tracks conflicts with detailed info:
+  - Username and color
+  - Timestamp
+  - Description ("added 2, updated 3, deleted 1")
+  - Element count
+- Collapsible panel design
+- Individual dismiss or dismiss all
+- Last-write-wins resolution strategy note
+- Maximum 10 conflicts to prevent UI overflow
+- Integrated with element sync service to record changes
+
+### 🧠 Technical Decisions & Challenges
+
+**Root Cause of Sync Issues:**
+The original implementation only sent basic geometric properties but Excalidraw requires ~20 additional properties for proper rendering.
+
+**Cursor Coordinate Challenge:**
+The original cursor tracking used `scrollX`/`scrollY` which are canvas pan positions, not mouse positions. Fixed by:
+1. Tracking actual mouse position in screen coordinates
+2. Transforming to canvas coordinates before sending
+3. Other users transform back to screen coordinates for rendering
+4. Re-rendering when zoom/scroll changes to keep cursors accurate
+
+**Type Safety Challenge:**
+Discovered that the frontend type name `Element` conflicted with the DOM's global `Element` type. Solution was renaming to `ExcalidrawElementPayload`.
+
+### ✅ Build Verification
+
+- ✅ Frontend builds successfully (`npm run build`)
+- ✅ Backend builds successfully (`go build ./cmd/server`)
+- ✅ No TypeScript errors
+- ✅ No Go compilation errors
+
+### 📊 Files Modified
+
+**Backend:**
+- `excalidraw-be/internal/websocket/types.go` - Extended ElementPayload
+- `excalidraw-be/internal/room/room.go` - Extended Element struct, added BoundElement
+- `excalidraw-be/internal/websocket/handler.go` - Updated conversion functions
+
+**Frontend:**
+- `excalidraw-fe/src/types/websocket.ts` - Renamed Element type, extended properties
+- `excalidraw-fe/src/components/Whiteboard.tsx` - Updated conversions, added mouse tracking, integrated conflict panel and invite dialog
+- `excalidraw-fe/src/components/RemoteCursors.tsx` - Added coordinate transformation with excalidrawAPI prop
+- `excalidraw-fe/src/components/RoomInviteDialog.tsx` - New invite confirmation dialog
+- `excalidraw-fe/src/components/ConflictResolutionPanel.tsx` - New conflict tracking UI
+- `excalidraw-fe/src/services/elementSyncService.ts` - Updated all conversions
+- `excalidraw-fe/src/utils/roomURL.ts` - URL utilities (unchanged but utilized)
+
+### ⏭️ Next Steps
+
+**Phase 8:**
+- Collaboration UX polish (user avatars in panel, typing indicators)
+- Toast notifications for join/leave events
+- More detailed participant activity tracking
+
+

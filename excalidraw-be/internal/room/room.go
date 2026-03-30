@@ -7,17 +7,37 @@ import (
 
 // Element represents a whiteboard element (rectangle, ellipse, arrow, text, etc.)
 type Element struct {
-	ID         string                 `json:"id"`
-	Type       string                 `json:"type"`
-	X          float64                `json:"x"`
-	Y          float64                `json:"y"`
-	Width      float64                `json:"width,omitempty"`
-	Height     float64                `json:"height,omitempty"`
-	Angle      float64                `json:"angle,omitempty"`
-	Stroke     string                 `json:"stroke,omitempty"`
-	Background string                 `json:"background,omitempty"`
-	Fill       string                 `json:"fill,omitempty"`
-	Data       map[string]interface{} `json:"data,omitempty"`
+	ID              string                 `json:"id"`
+	Type            string                 `json:"type"`
+	X               float64                `json:"x"`
+	Y               float64                `json:"y"`
+	Width           float64                `json:"width,omitempty"`
+	Height          float64                `json:"height,omitempty"`
+	Angle           float64                `json:"angle,omitempty"`
+	StrokeColor     string                 `json:"strokeColor,omitempty"`
+	BackgroundColor string                 `json:"backgroundColor,omitempty"`
+	FillStyle       string                 `json:"fillStyle,omitempty"`
+	StrokeWidth     int                    `json:"strokeWidth,omitempty"`
+	StrokeStyle     string                 `json:"strokeStyle,omitempty"`
+	Roughness       int                    `json:"roughness,omitempty"`
+	Opacity         int                    `json:"opacity,omitempty"`
+	Seed            int64                  `json:"seed,omitempty"`
+	Version         int                    `json:"version,omitempty"`
+	VersionNonce    int                    `json:"versionNonce,omitempty"`
+	IsDeleted       bool                   `json:"isDeleted,omitempty"`
+	GroupIds        []string               `json:"groupIds,omitempty"`
+	FrameId         string                 `json:"frameId,omitempty"`
+	BoundElements   []BoundElement         `json:"boundElements,omitempty"`
+	Updated         int64                  `json:"updated,omitempty"`
+	Link            string                 `json:"link,omitempty"`
+	Locked          bool                   `json:"locked,omitempty"`
+	Data            map[string]interface{} `json:"data,omitempty"`
+}
+
+// BoundElement represents an element bound to another element
+type BoundElement struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
 }
 
 // User represents a participant in a room

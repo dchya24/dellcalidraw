@@ -28,17 +28,37 @@ type ElementChanges struct {
 }
 
 type ElementPayload struct {
-	ID         string                 `json:"id"`
-	Type       string                 `json:"type"`
-	X          float64                `json:"x"`
-	Y          float64                `json:"y"`
-	Width      float64                `json:"width,omitempty"`
-	Height     float64                `json:"height,omitempty"`
-	Angle      float64                `json:"angle,omitempty"`
-	Stroke     string                 `json:"stroke,omitempty"`
-	Background string                 `json:"background,omitempty"`
-	Fill       string                 `json:"fill,omitempty"`
-	Data       map[string]interface{} `json:"data,omitempty"`
+	ID              string                `json:"id"`
+	Type            string                `json:"type"`
+	X               float64               `json:"x"`
+	Y               float64               `json:"y"`
+	Width           float64               `json:"width,omitempty"`
+	Height          float64               `json:"height,omitempty"`
+	Angle           float64               `json:"angle,omitempty"`
+	StrokeColor     string                `json:"strokeColor,omitempty"`
+	BackgroundColor string                `json:"backgroundColor,omitempty"`
+	FillStyle       string                `json:"fillStyle,omitempty"`
+	StrokeWidth     int                   `json:"strokeWidth,omitempty"`
+	StrokeStyle     string                `json:"strokeStyle,omitempty"`
+	Roughness       int                   `json:"roughness,omitempty"`
+	Opacity         int                   `json:"opacity,omitempty"`
+	Seed            int64                 `json:"seed,omitempty"`
+	Version         int                   `json:"version,omitempty"`
+	VersionNonce    int                   `json:"versionNonce,omitempty"`
+	IsDeleted       bool                  `json:"isDeleted,omitempty"`
+	GroupIds        []string              `json:"groupIds,omitempty"`
+	FrameId         string                `json:"frameId,omitempty"`
+	BoundElements   []BoundElementPayload `json:"boundElements,omitempty"`
+	Updated         int64                 `json:"updated,omitempty"`
+	Link            string                `json:"link,omitempty"`
+	Locked          bool                  `json:"locked,omitempty"`
+	// Type-specific fields stored in Data for flexibility
+	Data map[string]interface{} `json:"data,omitempty"`
+}
+
+type BoundElementPayload struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
 }
 
 type CursorMovePayload struct {

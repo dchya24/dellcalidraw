@@ -20,6 +20,8 @@ import ConfirmDialog from "./ConfirmDialog";
 import Sidebar from "./Sidebar";
 import RemoteCursors from "./RemoteCursors";
 import FloatingTab from "./FloatingTab";
+import RoomInviteDialog from "./RoomInviteDialog";
+import ConflictResolutionPanel from "./ConflictResolutionPanel";
 
 interface WhiteboardProps {
   username: string;
@@ -37,6 +39,15 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
   const [floatingTabOpen, setFloatingTabOpen] = useState(false);
+  const [conflicts, setConflicts] = useState<Array<{
+    id: string;
+    userId: string;
+    username: string;
+    color: string;
+    timestamp: number;
+    description: string;
+    elementCount: number;
+  }>>([]);
   const {
     files,
     activeFileId,
@@ -233,22 +244,16 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   }, []);
 
   // Helper function to convert backend element to Excalidraw format
-  // Define this early so it can be used in other callbacks
   const convertBackendToExcalidraw = useCallback(
-    (backendEl: {
-      id: string;
-      type: string;
-      x: number;
-      y: number;
-      width?: number;
-      height?: number;
-      angle?: number;
-      stroke?: string;
-      background?: string;
-      fill?: string;
-      data?: Record<string, unknown>;
-    }): OrderedExcalidrawElement => {
-      return {
+    (backendEl: import('../types/websocket').ExcalidrawElementPayload): OrderedExcalidrawElement => {
+      // Generate required fields with defaults if missing
+      const seed = backendEl.seed ?? Math.floor(Math.random() * 1000000);
+      const version = backendEl.version ?? 1;
+      const versionNonce = backendEl.versionNonce ?? Math.floor(Math.random() * 1000000);
+      const updated = backendEl.updated ?? Date.now();
+      
+      // Build the base element with all required properties
+      const baseElement = {
         id: backendEl.id,
         type: backendEl.type as OrderedExcalidrawElement["type"],
         x: backendEl.x,
@@ -256,11 +261,34 @@ export default function Whiteboard({ username }: WhiteboardProps) {
         width: backendEl.width ?? 0,
         height: backendEl.height ?? 0,
         angle: backendEl.angle ?? 0,
-        strokeColor: backendEl.stroke ?? "#000000",
-        backgroundColor: backendEl.background ?? "transparent",
-        fillStyle: backendEl.fill ?? "solid" as OrderedExcalidrawElement["fillStyle"],
-        ...((backendEl.data || {}) as Partial<OrderedExcalidrawElement>),
-      } as OrderedExcalidrawElement;
+        strokeColor: backendEl.strokeColor ?? "#000000",
+        backgroundColor: backendEl.backgroundColor ?? "transparent",
+        fillStyle: (backendEl.fillStyle ?? "solid") as OrderedExcalidrawElement["fillStyle"],
+        strokeWidth: backendEl.strokeWidth ?? 1,
+        strokeStyle: (backendEl.strokeStyle ?? "solid") as OrderedExcalidrawElement["strokeStyle"],
+        roughness: backendEl.roughness ?? 1,
+        opacity: backendEl.opacity ?? 100,
+        seed,
+        version,
+        versionNonce,
+        index: null, // Will be set by Excalidraw
+        isDeleted: backendEl.isDeleted ?? false,
+        groupIds: backendEl.groupIds ?? [],
+        frameId: backendEl.frameId ?? null,
+        boundElements: backendEl.boundElements ?? null,
+        updated,
+        link: backendEl.link ?? null,
+        locked: backendEl.locked ?? false,
+        // Add roundness with proper type
+        roundness: null as OrderedExcalidrawElement["roundness"],
+      };
+
+      // Merge any additional data from the backend
+      if (backendEl.data) {
+        Object.assign(baseElement, backendEl.data);
+      }
+
+      return baseElement as OrderedExcalidrawElement;
     },
     [],
   );
@@ -465,10 +493,46 @@ export default function Whiteboard({ username }: WhiteboardProps) {
 
       console.log("📥 Applying remote element changes:", payload);
 
-      // Show conflict warning if someone else is editing
+      // Get participant info for conflict tracking
+      const participants = roomService.getParticipants();
+      const participant = participants.find(p => p.id === payload.userId);
+      const username = participant?.username || "Unknown";
+      const color = participant?.color || "#888888";
+
+      // Count elements changed
+      const addedCount = payload.changes.added?.length || 0;
+      const updatedCount = payload.changes.updated?.length || 0;
+      const deletedCount = payload.changes.deleted?.length || 0;
+      const totalChanged = addedCount + updatedCount + deletedCount;
+
+      // Show conflict warning toast
       if (payload.userId) {
-        setConflictWarning(`Another user just made changes`);
+        setConflictWarning(`${username} just made changes (${totalChanged} elements)`);
         setTimeout(() => setConflictWarning(null), 3000);
+
+        // Add to conflicts list
+        const conflictId = `${payload.userId}-${Date.now()}`;
+        const changeDescriptions: string[] = [];
+        if (addedCount > 0) changeDescriptions.push(`added ${addedCount}`);
+        if (updatedCount > 0) changeDescriptions.push(`updated ${updatedCount}`);
+        if (deletedCount > 0) changeDescriptions.push(`deleted ${deletedCount}`);
+
+        setConflicts(prev => {
+          // Keep only last 10 conflicts to prevent UI overflow
+          const newConflicts = [
+            {
+              id: conflictId,
+              userId: payload.userId,
+              username,
+              color,
+              timestamp: Date.now(),
+              description: changeDescriptions.join(", ") || "made changes",
+              elementCount: totalChanged,
+            },
+            ...prev,
+          ].slice(0, 10);
+          return newConflicts;
+        });
       }
 
       // Get current elements
@@ -613,15 +677,37 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   }, []);
 
   // Initialize cursor tracking when Excalidraw is ready
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+
+  // Track mouse position for cursor sync
+  useEffect(() => {
+    const container = document.querySelector('.excalidraw-container');
+    if (!container) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePosition({ x: e.clientX, y: e.clientY });
+    };
+
+    container.addEventListener('mousemove', handleMouseMove);
+    return () => container.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
   useEffect(() => {
     if (!excalidrawAPI || !isReady || !roomId) return;
 
-    // Start cursor tracking
+    // Start cursor tracking with proper coordinate transformation
     cursorService.startTracking(() => {
       const appState = excalidrawAPI.getAppState();
+      const zoom = appState.zoom?.value || 1;
+      
+      // Transform screen coordinates to canvas coordinates
+      // This is what we send to other users
+      const canvasX = (mousePosition.x - appState.offsetLeft - appState.scrollX) / zoom;
+      const canvasY = (mousePosition.y - appState.offsetTop - appState.scrollY) / zoom;
+      
       return {
-        x: appState.scrollX || 0,
-        y: appState.scrollY || 0,
+        x: canvasX,
+        y: canvasY,
       };
     });
 
@@ -690,7 +776,17 @@ export default function Whiteboard({ username }: WhiteboardProps) {
           onChange={handleChange}
           initialData={getInitialData()}
         />
-        <RemoteCursors />
+        <RemoteCursors excalidrawAPI={excalidrawAPI} />
+
+        {/* Conflict Resolution Panel */}
+        <ConflictResolutionPanel
+          conflicts={conflicts}
+          onDismiss={(id) => setConflicts(prev => prev.filter(c => c.id !== id))}
+          onDismissAll={() => setConflicts([])}
+        />
+
+        {/* Room Invite Dialog */}
+        <RoomInviteDialog username={username} />
 
       </div>
       <TabBar

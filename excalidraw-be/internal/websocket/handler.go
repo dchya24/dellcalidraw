@@ -482,17 +482,31 @@ func elementsToPayload(elements []room.Element) []ElementPayload {
 	payload := make([]ElementPayload, len(elements))
 	for i, elem := range elements {
 		payload[i] = ElementPayload{
-			ID:         elem.ID,
-			Type:       elem.Type,
-			X:          elem.X,
-			Y:          elem.Y,
-			Width:      elem.Width,
-			Height:     elem.Height,
-			Angle:      elem.Angle,
-			Stroke:     elem.Stroke,
-			Background: elem.Background,
-			Fill:       elem.Fill,
-			Data:       elem.Data,
+			ID:              elem.ID,
+			Type:            elem.Type,
+			X:               elem.X,
+			Y:               elem.Y,
+			Width:           elem.Width,
+			Height:          elem.Height,
+			Angle:           elem.Angle,
+			StrokeColor:     elem.StrokeColor,
+			BackgroundColor: elem.BackgroundColor,
+			FillStyle:       elem.FillStyle,
+			StrokeWidth:     elem.StrokeWidth,
+			StrokeStyle:     elem.StrokeStyle,
+			Roughness:       elem.Roughness,
+			Opacity:         elem.Opacity,
+			Seed:            elem.Seed,
+			Version:         elem.Version,
+			VersionNonce:    elem.VersionNonce,
+			IsDeleted:       elem.IsDeleted,
+			GroupIds:        elem.GroupIds,
+			FrameId:         elem.FrameId,
+			BoundElements:   convertBoundElements(elem.BoundElements),
+			Updated:         elem.Updated,
+			Link:            elem.Link,
+			Locked:          elem.Locked,
+			Data:            elem.Data,
 		}
 	}
 	return payload
@@ -514,17 +528,61 @@ func payloadToElements(elements []ElementPayload) []room.Element {
 	result := make([]room.Element, len(elements))
 	for i, elem := range elements {
 		result[i] = room.Element{
-			ID:         elem.ID,
-			Type:       elem.Type,
-			X:          elem.X,
-			Y:          elem.Y,
-			Width:      elem.Width,
-			Height:     elem.Height,
-			Angle:      elem.Angle,
-			Stroke:     elem.Stroke,
-			Background: elem.Background,
-			Fill:       elem.Fill,
-			Data:       elem.Data,
+			ID:              elem.ID,
+			Type:            elem.Type,
+			X:               elem.X,
+			Y:               elem.Y,
+			Width:           elem.Width,
+			Height:          elem.Height,
+			Angle:           elem.Angle,
+			StrokeColor:     elem.StrokeColor,
+			BackgroundColor: elem.BackgroundColor,
+			FillStyle:       elem.FillStyle,
+			StrokeWidth:     elem.StrokeWidth,
+			StrokeStyle:     elem.StrokeStyle,
+			Roughness:       elem.Roughness,
+			Opacity:         elem.Opacity,
+			Seed:            elem.Seed,
+			Version:         elem.Version,
+			VersionNonce:    elem.VersionNonce,
+			IsDeleted:       elem.IsDeleted,
+			GroupIds:        elem.GroupIds,
+			FrameId:         elem.FrameId,
+			BoundElements:   convertPayloadBoundElements(elem.BoundElements),
+			Updated:         elem.Updated,
+			Link:            elem.Link,
+			Locked:          elem.Locked,
+			Data:            elem.Data,
+		}
+	}
+	return result
+}
+
+// Helper function to convert room.BoundElement to websocket BoundElementPayload
+func convertBoundElements(elements []room.BoundElement) []BoundElementPayload {
+	if elements == nil {
+		return nil
+	}
+	result := make([]BoundElementPayload, len(elements))
+	for i, elem := range elements {
+		result[i] = BoundElementPayload{
+			ID:   elem.ID,
+			Type: elem.Type,
+		}
+	}
+	return result
+}
+
+// Helper function to convert websocket BoundElementPayload to room.BoundElement
+func convertPayloadBoundElements(elements []BoundElementPayload) []room.BoundElement {
+	if elements == nil {
+		return nil
+	}
+	result := make([]room.BoundElement, len(elements))
+	for i, elem := range elements {
+		result[i] = room.BoundElement{
+			ID:   elem.ID,
+			Type: elem.Type,
 		}
 	}
 	return result

@@ -164,6 +164,19 @@ func (h *Hub) handleMessage(conn *Connection, message []byte) {
 
 	slog.Info("✅ Message parsed successfully", "connID", conn.ID, "type", wsMsg.Type, "payload", wsMsg.Payload)
 
+	// Handle heartbeat ping from client
+	if wsMsg.Type == "ping" {
+		slog.Debug("💓 Heartbeat ping received", "connID", conn.ID)
+		h.sendMessage(conn, "pong", map[string]interface{}{})
+		return
+	}
+
+	// Handle pong from client (optional - for server-initiated ping)
+	if wsMsg.Type == "pong" {
+		slog.Debug("💓 Heartbeat pong received", "connID", conn.ID)
+		return
+	}
+
 	switch wsMsg.Type {
 	case "join_room":
 		slog.Info("🚪 Routing to handleJoinRoom", "connID", conn.ID)

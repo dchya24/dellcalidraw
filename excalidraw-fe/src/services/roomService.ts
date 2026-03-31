@@ -4,6 +4,7 @@ import type { JoinRoomPayload, RoomStatePayload, UserJoinedPayload, UserLeftPayl
 interface RoomServiceConfig {
   wsUrl: string;
   username?: string;
+  enableHeartbeat?: boolean;
 }
 
 class RoomService {
@@ -15,11 +16,13 @@ class RoomService {
   private userJoinedListeners: Set<(payload: UserJoinedPayload) => void> = new Set();
   private userLeftListeners: Set<(payload: UserLeftPayload) => void> = new Set();
   private connectionChangeListeners: Set<(connected: boolean) => void> = new Set();
+  private errorListeners: Set<(error: Error) => void> = new Set();
   private unloadHandler: ((this: Window, ev: Event) => unknown) | undefined;
+  private wsErrorUnsubscribe: (() => void) | null = null;
 
   async joinRoom(roomId: string, username: string, config?: RoomServiceConfig): Promise<void> {
     if (this.currentRoomId === roomId && this.isConnected) {
-      console.log('Already joined room:', roomId);
+      console.log('[RoomService] Already joined room:', roomId);
       return;
     }
 
@@ -29,27 +32,32 @@ class RoomService {
     }
 
     const wsUrl = config?.wsUrl || this.getDefaultWsUrl();
-    console.log('Connecting to WebSocket:', wsUrl);
+    console.log('[RoomService] Connecting to WebSocket:', wsUrl);
     this.currentUsername = username;
 
     try {
       // Set up message handlers BEFORE connecting
       this.setupMessageHandlers();
 
-      // Connect to WebSocket
+      // Connect to WebSocket with enhanced features
       await wsService.connect({
         url: wsUrl,
-        reconnectInterval: 3000,
-        maxReconnectAttempts: 5,
+        reconnectInterval: 1000, // Start with 1s, will increase exponentially
+        maxReconnectAttempts: 10,
+        enableHeartbeat: config?.enableHeartbeat ?? true,
+        heartbeatInterval: 10000, // 10 seconds
+        heartbeatTimeout: 10000,  // 10 seconds
       });
 
-      // Send join_room message
+      // Send join_room message with acknowledgment support
       const payload: JoinRoomPayload = { roomId, username };
-      console.log('Sending join_room message:', payload);
+      console.log('[RoomService] Sending join_room:', payload);
+
+      // Use regular send (join_room doesn't need ack)
       const sent = wsService.send('join_room', payload);
 
       if (!sent) {
-        throw new Error('Failed to send join_room message');
+        throw new Error('Failed to send join_room message - WebSocket not connected');
       }
 
       this.currentRoomId = roomId;
@@ -59,9 +67,15 @@ class RoomService {
       // Set up page unload handler to leave room properly
       this.setupUnloadHandler();
 
-      console.log('✅ Joined room:', roomId);
+      // Set up WebSocket error handler
+      this.wsErrorUnsubscribe = wsService.onError((error) => {
+        console.error('[RoomService] WebSocket error:', error);
+        this.notifyError(error);
+      });
+
+      console.log('✅ [RoomService] Joined room:', roomId);
     } catch (error) {
-      console.error('❌ Failed to join room:', error);
+      console.error('❌ [RoomService] Failed to join room:', error);
       this.isConnected = false;
       this.notifyConnectionChange(false);
       throw error;
@@ -79,6 +93,12 @@ class RoomService {
     // Remove unload handler
     this.removeUnloadHandler();
 
+    // Unsubscribe from WebSocket errors
+    if (this.wsErrorUnsubscribe) {
+      this.wsErrorUnsubscribe();
+      this.wsErrorUnsubscribe = null;
+    }
+
     // Disconnect WebSocket
     wsService.disconnect();
 
@@ -88,7 +108,38 @@ class RoomService {
     this.participants = [];
     this.notifyConnectionChange(false);
 
-    console.log('👋 Left room');
+    console.log('[RoomService] 👋 Left room');
+  }
+
+  /**
+   * Reconnect to current room (useful for manual retry)
+   */
+  async reconnect(): Promise<void> {
+    if (!this.currentRoomId || !this.currentUsername) {
+      throw new Error('No room to reconnect to');
+    }
+
+    console.log('[RoomService] Attempting reconnect to room:', this.currentRoomId);
+    this.isConnected = false;
+
+    await wsService.reconnect();
+
+    // Re-join room after reconnection
+    const payload: JoinRoomPayload = {
+      roomId: this.currentRoomId,
+      username: this.currentUsername
+    };
+    wsService.send('join_room', payload);
+
+    this.isConnected = true;
+    this.notifyConnectionChange(true);
+  }
+
+  /**
+   * Get current connection state
+   */
+  getConnectionState(): 'disconnected' | 'connecting' | 'connected' | 'reconnecting' {
+    return wsService.getConnectionState();
   }
 
   getCurrentRoom(): string | null {
@@ -100,12 +151,18 @@ class RoomService {
   }
 
   getParticipants(): Participant[] {
-    console.log('Participants:', this.participants);
     return [...this.participants];
   }
 
   getUsername(): string {
     return this.currentUsername;
+  }
+
+  /**
+   * Get reconnect attempt count
+   */
+  getReconnectAttempts(): number {
+    return wsService.getReconnectAttempts();
   }
 
   // Event listeners
@@ -126,27 +183,33 @@ class RoomService {
 
   onConnectionChange(callback: (connected: boolean) => void): () => void {
     this.connectionChangeListeners.add(callback);
+    // Immediately notify current state
+    callback(this.isConnectedToRoom());
     return () => this.connectionChangeListeners.delete(callback);
+  }
+
+  onError(callback: (error: Error) => void): () => void {
+    this.errorListeners.add(callback);
+    return () => this.errorListeners.delete(callback);
   }
 
   private setupMessageHandlers(): void {
     // Handle room_state
     wsService.on('room_state', (payload: RoomStatePayload) => {
-      console.log('📦 Received room state:', payload);
+      console.log('[RoomService] 📦 Received room state:', payload);
       this.participants = payload.participants || [];
       this.roomStateListeners.forEach(listener => {
         try {
           listener(payload);
         } catch (error) {
-          console.error('Error in room_state handler:', error);
+          console.error('[RoomService] Error in room_state handler:', error);
         }
       });
     });
 
     // Handle user_joined
     wsService.on('user_joined', (payload: UserJoinedPayload) => {
-      console.log('👤 User joined:', payload);
-      // Add the new user to participants list
+      console.log('[RoomService] 👤 User joined:', payload);
       const newParticipant: Participant = {
         id: payload.userId,
         username: payload.username,
@@ -160,34 +223,47 @@ class RoomService {
         try {
           listener(payload);
         } catch (error) {
-          console.error('Error in user_joined handler:', error);
+          console.error('[RoomService] Error in user_joined handler:', error);
         }
       });
     });
 
     // Handle user_left
     wsService.on('user_left', (payload: UserLeftPayload) => {
-      console.log('👤 User left:', payload);
+      console.log('[RoomService] 👤 User left:', payload);
       this.participants = this.participants.filter(p => p.id !== payload.userId);
       this.userLeftListeners.forEach(listener => {
         try {
           listener(payload);
         } catch (error) {
-          console.error('Error in user_left handler:', error);
+          console.error('[RoomService] Error in user_left handler:', error);
         }
       });
     });
 
-    // Handle connection state changes
+    // Handle connection state changes from WebSocket service
     wsService.onConnectionChange((connected) => {
-      this.isConnected = connected;
-      this.notifyConnectionChange(connected);
+      // Only update if we're in a room
+      if (this.currentRoomId) {
+        this.isConnected = connected;
+        this.notifyConnectionChange(connected);
+
+        // If reconnected, re-join room
+        if (connected && wsService.getReconnectAttempts() > 0) {
+          console.log('[RoomService] Reconnected, re-joining room:', this.currentRoomId);
+          const payload: JoinRoomPayload = {
+            roomId: this.currentRoomId,
+            username: this.currentUsername
+          };
+          wsService.send('join_room', payload);
+        }
+      }
     });
 
-    // Handle errors
+    // Handle server errors
     wsService.on('error', (payload: ErrorPayload) => {
-      console.error('❌ Server error:', payload.message, payload.code);
-      // Could add user-facing error notifications here
+      console.error('[RoomService] ❌ Server error:', payload.message, payload.code);
+      this.notifyError(new Error(`${payload.code}: ${payload.message}`));
     });
   }
 
@@ -196,7 +272,17 @@ class RoomService {
       try {
         listener(connected);
       } catch (error) {
-        console.error('Error in connection change handler:', error);
+        console.error('[RoomService] Error in connection change handler:', error);
+      }
+    });
+  }
+
+  private notifyError(error: Error): void {
+    this.errorListeners.forEach(listener => {
+      try {
+        listener(error);
+      } catch (e) {
+        console.error('[RoomService] Error in error handler:', e);
       }
     });
   }
@@ -215,22 +301,9 @@ class RoomService {
   }
 
   private setupUnloadHandler(): void {
-    // Handle visibility change (more reliable than beforeunload)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && this.isConnected) {
-        console.log('👋 Tab hidden, sending leave_room');
-        // Send leave_room immediately when tab is hidden
-        wsService.send('leave_room', { roomId: this.currentRoomId });
-        // Mark as disconnected to prevent reconnection
-        this.isConnected = false;
-      }
-    };
-
-    // Handle page unload (best effort)
     const handleBeforeUnload = () => {
       if (this.currentRoomId && this.isConnected) {
-        console.log('👋 Page unloading, sending leave_room');
-        // Use sendBeacon for more reliable delivery during unload
+        console.log('[RoomService] 👋 Page unloading, sending leave_room');
         const data = JSON.stringify({
           type: 'leave_room',
           payload: { roomId: this.currentRoomId }
@@ -242,24 +315,17 @@ class RoomService {
         // Also try sendBeacon as fallback
         if (navigator.sendBeacon) {
           const blob = new Blob([data], { type: 'application/json' });
-          navigator.sendBeacon(this.getDefaultWsUrl(), blob);
+          navigator.sendBeacon('/ws', blob);
         }
       }
     };
 
-    // Listen for visibility change (most reliable)
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Also listen for beforeunload as backup
     window.addEventListener('beforeunload', handleBeforeUnload);
-
-    // Store handler reference for cleanup
-    this.unloadHandler = handleVisibilityChange;
+    this.unloadHandler = handleBeforeUnload;
   }
 
   private removeUnloadHandler(): void {
     if (this.unloadHandler) {
-      document.removeEventListener('visibilitychange', this.unloadHandler);
       window.removeEventListener('beforeunload', this.unloadHandler);
       this.unloadHandler = undefined;
     }

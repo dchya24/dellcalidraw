@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef, useLayoutEffect } from "react";
 import { cursorService } from "../services/cursorService";
 import type { RemoteCursor } from "../types/websocket";
 import { useThemeStore } from "../store/useThemeStore";
@@ -16,6 +16,12 @@ interface RemoteCursorsProps {
 export default function RemoteCursors({ excalidrawAPI }: RemoteCursorsProps) {
   const { theme } = useThemeStore();
   const [cursors, setCursors] = useState<RemoteCursorWithPosition[]>([]);
+  const cursorsRef = useRef<RemoteCursorWithPosition[]>([]);
+
+  // Keep ref in sync with state using layout effect
+  useLayoutEffect(() => {
+    cursorsRef.current = cursors;
+  }, [cursors]);
 
   // Transform canvas coordinates to screen coordinates
   const transformToScreen = useCallback((canvasX: number, canvasY: number) => {
@@ -68,17 +74,22 @@ export default function RemoteCursors({ excalidrawAPI }: RemoteCursorsProps) {
 
   // Update cursor positions when zoom/scroll changes
   useEffect(() => {
-    if (!excalidrawAPI || cursors.length === 0) return;
+    if (!excalidrawAPI || cursorsRef.current.length === 0) return;
 
-    // Re-transform all cursors when viewport changes
-    setCursors(prev => prev.map(cursor => {
-      const { x: screenX, y: screenY } = transformToScreen(cursor.position.x, cursor.position.y);
-      return {
-        ...cursor,
-        x: screenX,
-        y: screenY,
-      };
-    }));
+    // Defer state update to avoid cascading renders
+    const rafId = requestAnimationFrame(() => {
+      // Re-transform all cursors when viewport changes
+      setCursors(prev => prev.map(cursor => {
+        const { x: screenX, y: screenY } = transformToScreen(cursor.position.x, cursor.position.y);
+        return {
+          ...cursor,
+          x: screenX,
+          y: screenY,
+        };
+      }));
+    });
+
+    return () => cancelAnimationFrame(rafId);
   }, [excalidrawAPI, transformToScreen]); // Re-run when excalidrawAPI reference changes (indicates viewport change)
 
   if (cursors.length === 0) return null;

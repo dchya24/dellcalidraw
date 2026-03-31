@@ -685,7 +685,7 @@ export default function Whiteboard({ username }: WhiteboardProps) {
   }, []);
 
   // Initialize cursor tracking when Excalidraw is ready
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const mousePositionRef = useRef({ x: 0, y: 0 });
 
   // Track mouse position for cursor sync
   useEffect(() => {
@@ -693,7 +693,7 @@ export default function Whiteboard({ username }: WhiteboardProps) {
     if (!container) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({ x: e.clientX, y: e.clientY });
+      mousePositionRef.current = { x: e.clientX, y: e.clientY };
     };
 
     container.addEventListener('mousemove', handleMouseMove);
@@ -710,8 +710,8 @@ export default function Whiteboard({ username }: WhiteboardProps) {
       
       // Transform screen coordinates to canvas coordinates
       // This is what we send to other users
-      const canvasX = (mousePosition.x - appState.offsetLeft - appState.scrollX) / zoom;
-      const canvasY = (mousePosition.y - appState.offsetTop - appState.scrollY) / zoom;
+      const canvasX = (mousePositionRef.current.x - appState.offsetLeft - appState.scrollX) / zoom;
+      const canvasY = (mousePositionRef.current.y - appState.offsetTop - appState.scrollY) / zoom;
       
       return {
         x: canvasX,

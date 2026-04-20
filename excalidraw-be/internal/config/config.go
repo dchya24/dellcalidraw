@@ -11,6 +11,7 @@ type Config struct {
 	Server    ServerConfig    `mapstructure:"server"`
 	WebSocket WebSocketConfig `mapstructure:"websocket"`
 	Room      RoomConfig      `mapstructure:"room"`
+	Database  DatabaseConfig  `mapstructure:"database"`
 	Log       LogConfig       `mapstructure:"log"`
 }
 
@@ -32,6 +33,18 @@ type RoomConfig struct {
 	Capacity          int           `mapstructure:"capacity"`
 	InactivityTimeout time.Duration `mapstructure:"inactivity_timeout"`
 	CleanupInterval   time.Duration `mapstructure:"cleanup_interval"`
+}
+
+type DatabaseConfig struct {
+	Host            string        `mapstructure:"host"`
+	Port            int           `mapstructure:"port"`
+	User            string        `mapstructure:"user"`
+	Password        string        `mapstructure:"password"`
+	DBName          string        `mapstructure:"dbname"`
+	SSLMode         string        `mapstructure:"sslmode"`
+	MaxOpenConns    int           `mapstructure:"max_open_conns"`
+	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
+	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
 }
 
 type LogConfig struct {
@@ -91,6 +104,17 @@ func setDefaults() {
 	viper.SetDefault("room.capacity", 50)
 	viper.SetDefault("room.inactivity_timeout", time.Hour)
 	viper.SetDefault("room.cleanup_interval", 10*time.Minute)
+
+	// Database defaults
+	viper.SetDefault("database.host", "localhost")
+	viper.SetDefault("database.port", 5432)
+	viper.SetDefault("database.user", "excalidraw")
+	viper.SetDefault("database.password", "excalidraw")
+	viper.SetDefault("database.dbname", "excalidraw")
+	viper.SetDefault("database.sslmode", "disable")
+	viper.SetDefault("database.max_open_conns", 25)
+	viper.SetDefault("database.max_idle_conns", 5)
+	viper.SetDefault("database.conn_max_lifetime", 5*time.Minute)
 
 	// Log defaults
 	viper.SetDefault("log.level", "info")

@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/you/excalidraw-be/internal/config"
+	"github.com/you/excalidraw-be/internal/database"
 	appmiddleware "github.com/you/excalidraw-be/internal/middleware"
 	"github.com/you/excalidraw-be/internal/room"
 	"github.com/you/excalidraw-be/internal/websocket"
@@ -43,6 +44,34 @@ func main() {
 		cfg.Room.CleanupInterval,
 		cfg.Room.InactivityTimeout,
 	)
+
+	// Initialize database (optional, graceful degradation)
+	var dbClient *database.PostgresClient
+	dbClient, err = database.NewPostgresClient(database.DBConfig{
+		Host:     cfg.Database.Host,
+		Port:     cfg.Database.Port,
+		User:     cfg.Database.User,
+		Password: cfg.Database.Password,
+		DBName:   cfg.Database.DBName,
+		SSLMode:  cfg.Database.SSLMode,
+		MaxOpen:  cfg.Database.MaxOpenConns,
+		MaxIdle:  cfg.Database.MaxIdleConns,
+		MaxLife:  cfg.Database.ConnMaxLifetime,
+	})
+	if err != nil {
+		slog.Warn("Database connection failed, running without persistence", "error", err)
+	} else {
+		defer dbClient.Close()
+
+		if err := database.RunMigrations(dbClient.DB(), cfg.Database.DBName); err != nil {
+			slog.Error("Failed to run migrations", "error", err)
+			os.Exit(1)
+		}
+
+		if err := room.InitPersistence(dbClient, roomManager, 3*time.Second); err != nil {
+			slog.Warn("Failed to initialize persistence, running without it", "error", err)
+		}
+	}
 
 	// Initialize WebSocket hub
 	hub := websocket.NewHub(roomManager)
@@ -82,6 +111,7 @@ func main() {
 	go func() {
 		logger.Info("Starting server",
 			zap.String("port", cfg.Server.Port),
+			zap.Bool("persistence", roomManager.HasPersistence()),
 		)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("Server failed", zap.Error(err))
@@ -95,6 +125,8 @@ func main() {
 	<-quit
 
 	logger.Info("Shutting down server...")
+
+	roomManager.StopPersistence()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -131,8 +163,6 @@ func roomLinkHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Generate shareable link
 	shareURL := fmt.Sprintf("%s?room=%s", "http://localhost:3000", roomID)
-
-	// TODO: Add QR code generation (optional for Phase 5)
 
 	// Response
 	response := map[string]interface{}{

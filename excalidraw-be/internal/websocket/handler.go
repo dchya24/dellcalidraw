@@ -374,6 +374,8 @@ func (h *Hub) handleLeaveRoom(conn *Connection, payload map[string]interface{}) 
 
 	r.RemoveUser(conn.UserID)
 
+	h.roomManager.FlushRoom(conn.RoomID)
+
 	// Notify other participants
 	userLeft := UserLeftPayload{
 		UserID: conn.UserID,
@@ -429,20 +431,23 @@ func (h *Hub) handleUpdateElements(conn *Connection, payload map[string]interfac
 		return
 	}
 
-	// Apply changes
+	var addedElements, updatedElements []room.Element
+
 	if len(updateMsg.Changes.Added) > 0 {
-		elements := payloadToElements(updateMsg.Changes.Added)
-		r.AddElements(elements)
+		addedElements = payloadToElements(updateMsg.Changes.Added)
+		r.AddElements(addedElements)
 	}
 
 	if len(updateMsg.Changes.Updated) > 0 {
-		elements := payloadToElements(updateMsg.Changes.Updated)
-		r.UpdateElements(elements)
+		updatedElements = payloadToElements(updateMsg.Changes.Updated)
+		r.UpdateElements(updatedElements)
 	}
 
 	if len(updateMsg.Changes.Deleted) > 0 {
 		r.DeleteElements(updateMsg.Changes.Deleted)
 	}
+
+	h.roomManager.QueuePersistence(conn.RoomID, addedElements, updatedElements, updateMsg.Changes.Deleted)
 
 	// Broadcast to other participants with sender info
 	elementsUpdated := ElementsUpdatedPayload{
@@ -521,6 +526,8 @@ func (h *Hub) unregisterConnection(conn *Connection) {
 					r := h.roomManager.GetRoom(conn.RoomID)
 					if r != nil {
 						r.RemoveUser(userID)
+
+						h.roomManager.FlushRoom(conn.RoomID)
 
 						// Notify other participants
 						userLeft := UserLeftPayload{UserID: userID}

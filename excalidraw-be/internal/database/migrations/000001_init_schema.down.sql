@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS room_files;
+DROP TABLE IF EXISTS room_elements;
+DROP TABLE IF EXISTS rooms;

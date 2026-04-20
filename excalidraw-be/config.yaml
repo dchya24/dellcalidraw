@@ -15,6 +15,17 @@ room:
   inactivity_timeout: 1h
   cleanup_interval: 10m
 
+database:
+  host: "localhost"
+  port: 5432
+  user: "excalidraw"
+  password: "excalidraw"
+  dbname: "excalidraw"
+  sslmode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+
 log:
   level: info
   format: json

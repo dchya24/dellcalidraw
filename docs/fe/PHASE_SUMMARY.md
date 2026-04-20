@@ -1,5 +1,150 @@
 # Whiteboard Project - Phase Summary
 
+## ✅ Phase 8: PostgreSQL Database Integration (Backend) Completed
+**Date:** 2026-04-20
+
+### 🛠 Features Implemented
+
+#### 1. PostgreSQL Database Client (`internal/database/database.go`)
+- Connection pooling via `database/sql` (25 max open, 5 idle)
+- Configurable via environment variables (`EXCALIDRAW_DATABASE_*`)
+- Connection health check with `Ping()`
+- Graceful `Close()` for shutdown
+
+#### 2. Embedded Migration System (`internal/database/migrate.go`)
+- SQL migrations embedded in Go binary via `embed.FS`
+- Uses `golang-migrate/migrate` library
+- Auto-applies on server startup
+- Supports up/down migrations
+
+#### 3. Database Schema (`internal/database/migrations/`)
+- `rooms` table: UUID primary key, unique room key, name, timestamps
+- `room_elements` table: JSONB element data, UPSERT on conflict, indexed by room_id
+- `room_files` table: File metadata with room reference (ready for Phase 9)
+- Cascading deletes: deleting a room removes all elements and files
+
+#### 4. Repository Layer (`internal/database/repository.go`)
+- `GetOrCreateRoom()` - Find or create room by key
+- `BatchSaveElements()` - UPSERT multiple elements in single transaction
+- `DeleteElements()` - Remove elements by ID in transaction
+- `GetRawElements()` - Load all elements as raw JSON
+- `SaveAllElementsRaw()` - Full snapshot replacement (used on cleanup)
+- `DeleteRoom()` - Remove room with cascade
+
+#### 5. Persistence Manager (`internal/room/persistence.go`)
+- 3-second throttled batch persistence
+- Pending queue per room with mutex protection
+- Periodic flush loop (background goroutine)
+- `FlushRoom()` for immediate persistence on user leave
+- `FlushAll()` for graceful shutdown
+- `SaveRoomSnapshot()` for inactive room cleanup
+- `LoadElements()` for initial scene loading on room join
+
+#### 6. Room Manager Integration (`internal/room/manager.go`)
+- `roomDBIDs` map tracks mapping of room key → database UUID
+- `QueuePersistence()` called after every element add/update/delete
+- `FlushRoom()` called when user leaves room
+- `StopPersistence()` flushes all rooms on server shutdown
+- Initial scene loading from database when room is first accessed
+- Snapshot persistence when inactive rooms are cleaned up
+
+#### 7. WebSocket Handler Integration (`internal/websocket/handler.go`)
+- Element updates queue persistence after applying changes
+- User leave triggers room flush to database
+- User disconnect triggers room flush
+
+#### 8. Docker Compose Updates
+- PostgreSQL 16 Alpine service with health check
+- Backend depends on PostgreSQL health check
+- Database environment variables configured
+- Persistent volume for database data
+- Both production and development compose files updated
+
+### 🧠 Technical Decisions & Challenges
+
+**Decision 1: Graceful Degradation**
+- Server starts without database and runs in-memory-only mode
+- Log warning instead of crash when DB unavailable
+- Allows development without PostgreSQL running locally
+
+**Decision 2: Throttled Persistence (3s)**
+- Balances data safety with write performance
+- Prevents excessive DB writes during active drawing
+- Batches multiple element updates into single transaction
+- Failed flushes re-queue for next cycle
+
+**Decision 3: UPSERT Pattern**
+- `INSERT ... ON CONFLICT DO UPDATE` handles both new and existing elements
+- Eliminates need for separate create/update logic
+- Maintains element versions for conflict tracking
+
+**Decision 4: No Import Cycles**
+- `database` package uses `json.RawMessage` (no `room.Element` dependency)
+- `room/persistence` handles marshaling between `room.Element` and JSON
+- Clean package dependency graph
+
+**Decision 5: Embedded Migrations**
+- SQL files compiled into binary via `go:embed`
+- No external migration files needed at runtime
+- Single binary deployment
+
+### 📊 Comparison: Before vs After
+
+| Feature | Before (Phase 7.1) | After (Phase 8) |
+|---------|---------------------|-----------------|
+| Data Persistence | ❌ In-memory only | ✅ PostgreSQL |
+| Server Restart | ❌ All data lost | ✅ Data survives |
+| Element Storage | ❌ Memory only | ✅ JSONB in PostgreSQL |
+| Room Cleanup | ❌ Data destroyed | ✅ Snapshot to DB first |
+| Migration System | ❌ None | ✅ Embedded in binary |
+| Connection Pooling | ❌ N/A | ✅ 25 max / 5 idle |
+| DB Failure Handling | ❌ N/A | ✅ Graceful degradation |
+
+### 📁 Files Created
+
+**Backend (Go):**
+- `excalidraw-be/internal/database/database.go`
+- `excalidraw-be/internal/database/migrate.go`
+- `excalidraw-be/internal/database/migrations/000001_init_schema.up.sql`
+- `excalidraw-be/internal/database/migrations/000001_init_schema.down.sql`
+- `excalidraw-be/internal/database/repository.go`
+- `excalidraw-be/internal/room/persistence.go`
+
+### 📁 Files Modified
+
+**Backend (Go):**
+- `excalidraw-be/internal/config/config.go` - Added DatabaseConfig
+- `excalidraw-be/config.yaml` - Added database section
+- `excalidraw-be/internal/room/manager.go` - Full rewrite with persistence
+- `excalidraw-be/internal/websocket/handler.go` - Persistence queuing
+- `excalidraw-be/cmd/server/main.go` - DB init, migration, shutdown
+
+**Infrastructure:**
+- `docker-compose.yml` - Added PostgreSQL 16
+- `docker-compose.dev.yml` - Added PostgreSQL 16
+
+**Dependencies:**
+- `github.com/lib/pq` - PostgreSQL driver
+- `github.com/golang-migrate/migrate/v4` - Migration library
+
+### ✅ Build Verification
+
+- ✅ Backend: `go build ./cmd/server` passes
+- ✅ Backend: `go vet ./...` passes
+- ✅ Backend: `go fmt ./...` passes
+- ✅ Frontend: `npm run build` passes
+- ✅ No Go compilation errors
+- ✅ No import cycle errors
+
+### ⏭️ Next Steps
+
+- **Phase 9**: File Storage (S3/MinIO integration for images)
+- **Phase 10**: File Encryption (AES-GCM)
+- **Phase 11**: REST API Completion (CRUD endpoints)
+- Consider adding database connection monitoring/metrics
+
+---
+
 ## 🔧 Phase 7.1: Enhanced WebSocket & Connection Stability
 **Date:** 2026-03-31
 
@@ -1029,7 +1174,6 @@ Discovered that the frontend type name `Element` conflicted with the DOM's globa
 
 ### ⏭️ Next Steps
 
-**Phase 8:**
-- Collaboration UX polish (user avatars in panel, typing indicators)
-- Toast notifications for join/leave events
-- More detailed participant activity tracking
+- **Phase 9**: File Storage (S3/MinIO integration for images)
+- **Phase 10**: File Encryption (AES-GCM)
+- **Phase 11**: REST API Completion (CRUD endpoints)

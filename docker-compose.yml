@@ -1,6 +1,27 @@
 version: '3.8'
 
 services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    container_name: excalidraw-postgres
+    environment:
+      POSTGRES_USER: excalidraw
+      POSTGRES_PASSWORD: excalidraw
+      POSTGRES_DB: excalidraw
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - excalidraw-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U excalidraw"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Backend service
   backend:
     build:
@@ -12,8 +33,17 @@ services:
     environment:
       - PORT=8080
       - HOST=0.0.0.0
+      - EXCALIDRAW_DATABASE_HOST=postgres
+      - EXCALIDRAW_DATABASE_PORT=5432
+      - EXCALIDRAW_DATABASE_USER=excalidraw
+      - EXCALIDRAW_DATABASE_PASSWORD=excalidraw
+      - EXCALIDRAW_DATABASE_DBNAME=excalidraw
+      - EXCALIDRAW_DATABASE_SSLMODE=disable
     env_file:
       - ./excalidraw-be/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - excalidraw-network
@@ -49,4 +79,5 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-data:
   backend-data:

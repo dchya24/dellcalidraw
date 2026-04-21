@@ -12,6 +12,7 @@ type Config struct {
 	WebSocket WebSocketConfig `mapstructure:"websocket"`
 	Room      RoomConfig      `mapstructure:"room"`
 	Database  DatabaseConfig  `mapstructure:"database"`
+	Storage   StorageConfig   `mapstructure:"storage"`
 	Log       LogConfig       `mapstructure:"log"`
 }
 
@@ -45,6 +46,16 @@ type DatabaseConfig struct {
 	MaxOpenConns    int           `mapstructure:"max_open_conns"`
 	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
+}
+
+type StorageConfig struct {
+	Endpoint  string `mapstructure:"endpoint"`
+	AccessKey string `mapstructure:"access_key"`
+	SecretKey string `mapstructure:"secret_key"`
+	Bucket    string `mapstructure:"bucket"`
+	Region    string `mapstructure:"region"`
+	UseSSL    bool   `mapstructure:"use_ssl"`
+	Public    bool   `mapstructure:"public"`
 }
 
 type LogConfig struct {
@@ -115,6 +126,15 @@ func setDefaults() {
 	viper.SetDefault("database.max_open_conns", 25)
 	viper.SetDefault("database.max_idle_conns", 5)
 	viper.SetDefault("database.conn_max_lifetime", 5*time.Minute)
+
+	// Storage defaults
+	viper.SetDefault("storage.endpoint", "localhost:9000")
+	viper.SetDefault("storage.access_key", "minioadmin")
+	viper.SetDefault("storage.secret_key", "minioadmin")
+	viper.SetDefault("storage.bucket", "excalidraw-files")
+	viper.SetDefault("storage.region", "us-east-1")
+	viper.SetDefault("storage.use_ssl", false)
+	viper.SetDefault("storage.public", false)
 
 	// Log defaults
 	viper.SetDefault("log.level", "info")

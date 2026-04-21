@@ -1,5 +1,151 @@
 # Whiteboard Project - Phase Summary
 
+## ✅ Phase 9: File Storage (MinIO/S3) Completed
+**Date:** 2026-04-21
+
+### 🛠 Features Implemented
+
+#### 1. Storage Client (`internal/storage/storage.go`)
+- MinIO/S3-compatible storage client using `minio-go/v7` SDK
+- Auto-creates bucket on startup if not exists
+- Upload, download, delete, presigned URL operations
+- Configurable endpoint, credentials, region, SSL
+- Object stat/metadata retrieval
+
+#### 2. Storage Configuration (`internal/config/config.go`)
+- `StorageConfig` struct with all S3/MinIO parameters
+- Environment variable overrides via `EXCALIDRAW_STORAGE_*`
+- Defaults: `localhost:9000`, `minioadmin` credentials, `excalidraw-files` bucket
+
+#### 3. Database Migration (`internal/database/migrations/000002_file_storage.up.sql`)
+- Adds `storage_key` column to `room_files` table
+- Index on `storage_key` for fast lookups
+- Reversible down migration
+
+#### 4. File Repository (`internal/database/files.go`)
+- `SaveFileRecord()` - Persist file metadata (MIME type, size, storage key)
+- `GetFileRecord()` - Retrieve file metadata by room and file ID
+- `DeleteFileRecord()` - Remove file metadata from database
+- `ListFileRecords()` - List all files for a room
+- UPSERT pattern for file record persistence
+
+#### 5. HTTP File Handlers (`cmd/server/file_handlers.go`)
+- **POST `/api/rooms/{roomId}/files`** - Upload file (multipart form, max 50MB)
+  - MIME type validation (image/* only)
+  - Auto-detect content type from extension/magic bytes
+  - UUID-based file ID generation
+  - Storage key: `{roomId}/{fileId}`
+  - Saves metadata to database
+- **GET `/api/rooms/{roomId}/files/{fileId}`** - Download file
+  - Streams file from MinIO to client
+  - Cache-Control headers (24h)
+  - Content-Type from storage metadata
+- **DELETE `/api/rooms/{roomId}/files/{fileId}`** - Delete file
+  - Removes from MinIO storage
+  - Removes metadata from database
+- **GET `/api/rooms/{roomId}/files`** - List room files
+  - Returns all file metadata with URLs
+
+#### 6. WebSocket File Events (`internal/websocket/handler_files.go`)
+- `file_uploaded` - Client notifies server after successful upload
+  - Broadcasts to other participants with user info
+  - Confirms upload to sender
+- `file_deleted` - Client notifies server after file deletion
+  - Broadcasts deletion to all participants
+
+#### 7. Docker Compose Updates
+- MinIO service added to both `docker-compose.yml` and `docker-compose.dev.yml`
+- MinIO Console on port 9001 (web UI)
+- MinIO API on port 9000
+- Health check using `mc ready local`
+- Persistent volume for MinIO data
+- Backend depends on MinIO health check
+- Storage environment variables configured
+
+### 🧠 Technical Decisions & Challenges
+
+**Decision 1: MinIO over raw S3**
+- MinIO provides S3-compatible API for local development
+- Same SDK works for both MinIO and AWS S3
+- Easy migration path to cloud storage
+
+**Decision 2: Graceful Degradation**
+- Server starts without storage (logs warning)
+- File upload routes only registered when storage available
+- Allows development without MinIO running locally
+
+**Decision 3: Storage Key Pattern**
+- `{roomId}/{fileId}` organizes files by room
+- Enables bulk operations per room
+- UUID file IDs prevent collisions
+
+**Decision 4: Image-Only Upload**
+- MIME type whitelist: `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/svg+xml`, `image/bmp`
+- Prevents malicious file uploads
+- Matches Excalidraw's image element support
+
+**Decision 5: Max File Size 50MB**
+- Reasonable limit for whiteboard images
+- Multipart form parsing with size enforcement
+- Matches typical diagram/image requirements
+
+### 📊 Comparison: Before vs After
+
+| Feature | Before (Phase 8) | After (Phase 9) |
+|---------|-------------------|-----------------|
+| File Storage | ❌ None | ✅ MinIO/S3 |
+| Image Upload | ❌ Not supported | ✅ HTTP multipart |
+| File Download | ❌ Not supported | ✅ Streaming from storage |
+| File Deletion | ❌ Not supported | ✅ Storage + DB cleanup |
+| File Metadata | ❌ `room_files` unused | ✅ Full metadata tracking |
+| WebSocket File Events | ❌ None | ✅ Upload/delete broadcast |
+| MinIO Console | ❌ None | ✅ Port 9001 |
+
+### 📁 Files Created
+
+**Backend (Go):**
+- `excalidraw-be/internal/storage/storage.go` - Storage client
+- `excalidraw-be/internal/database/files.go` - File metadata repository
+- `excalidraw-be/internal/database/migrations/000002_file_storage.up.sql` - Migration
+- `excalidraw-be/internal/database/migrations/000002_file_storage.down.sql` - Rollback
+- `excalidraw-be/internal/websocket/handler_files.go` - WebSocket file handlers
+- `excalidraw-be/cmd/server/file_handlers.go` - HTTP file handlers
+
+### 📁 Files Modified
+
+**Backend (Go):**
+- `excalidraw-be/internal/config/config.go` - Added StorageConfig
+- `excalidraw-be/config.yaml` - Added storage section
+- `excalidraw-be/cmd/server/main.go` - Storage init, file routes
+- `excalidraw-be/internal/websocket/handler.go` - File message routing
+- `excalidraw-be/internal/websocket/types.go` - File message types
+- `excalidraw-be/.env.example` - Storage env vars
+
+**Infrastructure:**
+- `docker-compose.yml` - Added MinIO service
+- `docker-compose.dev.yml` - Added MinIO service
+
+**Dependencies:**
+- `github.com/minio/minio-go/v7` - MinIO/S3 Go SDK
+
+### ✅ Build Verification
+
+- ✅ Backend: `go build ./cmd/server` passes
+- ✅ Backend: `go vet ./...` passes
+- ✅ Backend: `go fmt ./...` passes
+- ✅ Frontend: `npm run build` passes
+- ✅ No Go compilation errors
+- ✅ No TypeScript errors
+
+### ⏭️ Next Steps
+
+- **Phase 10**: File Encryption (AES-GCM)
+- **Phase 11**: REST API Completion (CRUD endpoints)
+- Frontend: Integrate file upload UI with Excalidraw image elements
+- Consider adding presigned URL support for direct browser-to-MinIO uploads
+
+---
+
 ## ✅ Phase 8: PostgreSQL Database Integration (Backend) Completed
 **Date:** 2026-04-20
 

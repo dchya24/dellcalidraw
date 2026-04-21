@@ -196,6 +196,12 @@ func (h *Hub) handleMessage(conn *Connection, message []byte) {
 	case "selection_change":
 		slog.Info("👆 Routing to handleSelectionChange", "connID", conn.ID)
 		h.handleSelectionChange(conn, wsMsg.Payload)
+	case "file_uploaded":
+		slog.Info("📎 Routing to handleFileUploaded", "connID", conn.ID)
+		h.handleFileUploaded(conn, wsMsg.Payload)
+	case "file_deleted":
+		slog.Info("🗑️ Routing to handleFileDeleted", "connID", conn.ID)
+		h.handleFileDeleted(conn, wsMsg.Payload)
 	default:
 		slog.Warn("❓ Unknown message type", "type", wsMsg.Type, "connID", conn.ID)
 	}

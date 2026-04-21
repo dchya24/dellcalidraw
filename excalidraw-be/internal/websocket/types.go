@@ -132,3 +132,35 @@ type SelectionUpdatedPayload struct {
 	Color       string   `json:"color"`
 	SelectedIDs []string `json:"selectedIds"`
 }
+
+// File Storage (Phase 9)
+type FileUploadedPayload struct {
+	RoomID     string `json:"roomId"`
+	FileID     string `json:"fileId"`
+	URL        string `json:"url"`
+	MimeType   string `json:"mimeType"`
+	Size       int64  `json:"size"`
+	StorageKey string `json:"storageKey"`
+}
+
+type FileUploadedBroadcast struct {
+	UserID   string `json:"userId"`
+	Username string `json:"username"`
+	FileID   string `json:"fileId"`
+	URL      string `json:"url"`
+	MimeType string `json:"mimeType"`
+	Size     int64  `json:"size"`
+}
+
+type FileDeletedBroadcast struct {
+	UserID string `json:"userId"`
+	FileID string `json:"fileId"`
+}
+
+type FileUploadedResponse struct {
+	FileID     string `json:"fileId"`
+	URL        string `json:"url"`
+	MimeType   string `json:"mimeType"`
+	Size       int64  `json:"size"`
+	StorageKey string `json:"storageKey"`
+}

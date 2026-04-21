@@ -26,6 +26,15 @@ database:
   max_idle_conns: 5
   conn_max_lifetime: 5m
 
+storage:
+  endpoint: "localhost:9000"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  bucket: "excalidraw-files"
+  region: "us-east-1"
+  use_ssl: false
+  public: false
+
 log:
   level: info
   format: json

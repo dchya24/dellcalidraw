@@ -649,7 +649,71 @@ CREATE TABLE room_files (
 
 ---
 
-### Phase 9: User Authentication & Authorization
+### Phase 9: File Storage (MinIO/S3) ✅ COMPLETED (2026-04-21)
+**Goal**: Server-side file storage for image uploads in whiteboard rooms
+
+**Deliverables**:
+- MinIO/S3-compatible storage client
+- HTTP file upload/download/delete endpoints
+- WebSocket file event broadcasting
+- Database file metadata tracking
+- Docker Compose MinIO service
+
+**Technical Tasks**:
+- [x] Create storage client with `minio-go/v7` SDK
+- [x] Add `StorageConfig` to config system
+- [x] Implement HTTP file upload handler (multipart, max 50MB)
+- [x] Implement HTTP file download handler (streaming)
+- [x] Implement HTTP file delete handler
+- [x] Add file metadata repository (database/files.go)
+- [x] Add database migration for `storage_key` column
+- [x] Add WebSocket `file_uploaded` / `file_deleted` events
+- [x] Add MinIO service to Docker Compose (prod + dev)
+- [x] Graceful degradation when storage unavailable
+
+**API Endpoints**:
+```
+POST   /api/rooms/{roomId}/files          - Upload file (multipart)
+GET    /api/rooms/{roomId}/files/{fileId}  - Download file
+DELETE /api/rooms/{roomId}/files/{fileId}  - Delete file
+GET    /api/rooms/{roomId}/files           - List room files
+```
+
+**WebSocket Events**:
+```
+Client → Server:
+  file_uploaded: { roomId, fileId, url, mimeType, size, storageKey }
+  file_deleted:  { roomId, fileId }
+
+Server → Client:
+  file_upload_confirmed: { fileId, url, mimeType, size, storageKey }
+  file_uploaded:         { userId, username, fileId, url, mimeType, size }
+  file_deleted:          { userId, fileId }
+```
+
+**Files Created**:
+- `internal/storage/storage.go` - Storage client
+- `internal/database/files.go` - File metadata repository
+- `internal/database/migrations/000002_file_storage.up.sql` - Migration
+- `internal/database/migrations/000002_file_storage.down.sql` - Rollback
+- `internal/websocket/handler_files.go` - WebSocket file handlers
+- `cmd/server/file_handlers.go` - HTTP file handlers
+
+**Files Modified**:
+- `internal/config/config.go` - StorageConfig
+- `config.yaml` - Storage section
+- `cmd/server/main.go` - Storage init, file routes
+- `internal/websocket/handler.go` - File message routing
+- `internal/websocket/types.go` - File message types
+- `.env.example` - Storage env vars
+- `docker-compose.yml` / `docker-compose.dev.yml` - MinIO service
+
+**Dependencies Added**:
+- `github.com/minio/minio-go/v7` - MinIO/S3 Go SDK
+
+---
+
+### Phase 10: User Authentication & Authorization
 **Goal**: Persistent user accounts with secure authentication
 
 **Deliverables**:
@@ -710,7 +774,7 @@ socket = io(url, {
 
 ---
 
-### Phase 10: Advanced Room Features
+### Phase 11: Advanced Room Features
 **Goal**: Enhanced room management and collaboration features
 
 **Deliverables**:
@@ -776,9 +840,9 @@ POST /api/rooms/:id/redo - Redo action
 
 ---
 
-## Advanced Features Phases (Phase 11-15)
+## Advanced Features Phases (Phase 12-16)
 
-### Phase 11: Multi-Server Scaling
+### Phase 12: Multi-Server Scaling
 **Goal**: Scale horizontally across multiple server instances
 
 **Deliverables**:
@@ -814,7 +878,7 @@ Client → Load Balancer → [Server 1, Server 2, Server 3]
 
 ---
 
-### Phase 12: File Storage & Export
+### Phase 13: File Storage & Export
 **Goal**: Server-side file storage and advanced export options
 
 **Deliverables**:
@@ -853,7 +917,7 @@ DELETE /api/files/:id - Delete file
 
 ---
 
-### Phase 13: Room Discovery & Directory
+### Phase 14: Room Discovery & Directory
 **Goal**: Public room directory with search and filtering
 
 **Deliverables**:
@@ -892,7 +956,7 @@ GET /api/rooms/:id/analytics - Room statistics
 
 ---
 
-### Phase 14: Advanced Collaboration Features
+### Phase 15: Advanced Collaboration Features
 **Goal**: Enhanced collaboration with comments, chat, and more
 
 **Deliverables**:
@@ -946,7 +1010,7 @@ PUT /api/notifications/:id/read - Mark as read
 
 ---
 
-### Phase 15: Advanced Security & Compliance
+### Phase 16: Advanced Security & Compliance
 **Goal**: Enterprise-grade security and GDPR compliance
 
 **Deliverables**:
@@ -995,9 +1059,9 @@ GET /api/audit-logs - Get audit logs
 
 ### Post-MVP (Phases 6-10)
 **Total Estimated Time**: 25-35 days
-**Delivers**: Persistent data, authentication, advanced features
+**Delivers**: Persistent data, file storage, authentication, advanced features
 
-### Advanced Features (Phases 11-15)
+### Advanced Features (Phases 12-16)
 **Total Estimated Time**: 28-39 days
 **Delivers**: Enterprise-ready, scalable, feature-rich platform
 
@@ -1024,19 +1088,21 @@ Phase 7 (Performance) ← Requires: Phase 3, 4
     ↓
 Phase 8 (Database) ← Requires: Phase 7
     ↓
-Phase 9 (Auth) ← Requires: Phase 8
+Phase 9 (File Storage) ← Requires: Phase 8
     ↓
-Phase 10 (Advanced Rooms) ← Requires: Phase 8, 9
+Phase 10 (Auth) ← Requires: Phase 8
     ↓
-Phase 11 (Scaling) ← Requires: Phase 8
+Phase 11 (Advanced Rooms) ← Requires: Phase 8, 10
     ↓
-Phase 12 (File Storage) ← Requires: Phase 8
+Phase 12 (Scaling) ← Requires: Phase 8
     ↓
-Phase 13 (Discovery) ← Requires: Phase 10
+Phase 13 (File Export) ← Requires: Phase 9
     ↓
-Phase 14 (Collaboration) ← Requires: Phase 9
+Phase 14 (Discovery) ← Requires: Phase 11
     ↓
-Phase 15 (Security) ← Requires: Phase 9
+Phase 15 (Collaboration) ← Requires: Phase 10
+    ↓
+Phase 16 (Security) ← Requires: Phase 10
 ```
 
 ---

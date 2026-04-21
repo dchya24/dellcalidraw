@@ -19,6 +19,7 @@ import (
 	"github.com/you/excalidraw-be/internal/database"
 	appmiddleware "github.com/you/excalidraw-be/internal/middleware"
 	"github.com/you/excalidraw-be/internal/room"
+	"github.com/you/excalidraw-be/internal/storage"
 	"github.com/you/excalidraw-be/internal/websocket"
 )
 
@@ -73,6 +74,22 @@ func main() {
 		}
 	}
 
+	var storageClient *storage.StorageClient
+	storageClient, err = storage.NewStorageClient(storage.StorageConfig{
+		Endpoint:  cfg.Storage.Endpoint,
+		AccessKey: cfg.Storage.AccessKey,
+		SecretKey: cfg.Storage.SecretKey,
+		Bucket:    cfg.Storage.Bucket,
+		Region:    cfg.Storage.Region,
+		UseSSL:    cfg.Storage.UseSSL,
+		Public:    cfg.Storage.Public,
+	})
+	if err != nil {
+		slog.Warn("Storage connection failed, running without file storage", "error", err)
+	} else {
+		defer storageClient.Close()
+	}
+
 	// Initialize WebSocket hub
 	hub := websocket.NewHub(roomManager)
 
@@ -95,8 +112,17 @@ func main() {
 		r.Use(middleware.AllowContentType("application/json"))
 		r.Get("/health", healthHandler)
 		r.Get("/api/stats", statsHandler(roomManager))
-		r.Get("/api/rooms/:id/link", roomLinkHandler)
+		r.Get("/api/rooms/{id}/link", roomLinkHandler)
 	})
+
+	// File upload/download routes (multipart support)
+	if storageClient != nil {
+		fileHandler := NewFileHandler(storageClient, dbClient, roomManager)
+		r.Post("/api/rooms/{roomId}/files", fileHandler.Upload)
+		r.Get("/api/rooms/{roomId}/files/{fileId}", fileHandler.Download)
+		r.Delete("/api/rooms/{roomId}/files/{fileId}", fileHandler.Delete)
+		r.Get("/api/rooms/{roomId}/files", fileHandler.ListFiles)
+	}
 
 	// Start server
 	server := &http.Server{
@@ -112,6 +138,7 @@ func main() {
 		logger.Info("Starting server",
 			zap.String("port", cfg.Server.Port),
 			zap.Bool("persistence", roomManager.HasPersistence()),
+			zap.Bool("file_storage", storageClient != nil),
 		)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("Server failed", zap.Error(err))

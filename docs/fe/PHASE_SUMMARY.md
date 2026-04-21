@@ -1,5 +1,142 @@
 # Whiteboard Project - Phase Summary
 
+## ✅ Phase 10: User Authentication & Authorization Completed
+**Date:** 2026-04-21
+
+### 🛠 Features Implemented
+
+#### 1. Auth Service (`internal/auth/auth.go`)
+- JWT access token generation with HS256 signing
+- Refresh token generation with rotation (old tokens revoked on use)
+- Password hashing with bcrypt (DefaultCost)
+- Token validation with claims extraction
+- Configurable TTL: access 15min, refresh 7 days
+
+#### 2. JWT Middleware (`internal/auth/middleware.go`)
+- `JWTMiddleware` validates Bearer token from Authorization header
+- Injects `userID`, `username`, `email` into request context
+- Returns 401 for missing/invalid tokens
+- `GetUserIDFromContext()` helper for downstream handlers
+
+#### 3. Database Schema (`internal/database/migrations/000003_user_auth.up.sql`)
+- `users` table: UUID PK, unique username, unique email, bcrypt password, avatar URL, timestamps
+- `refresh_tokens` table: UUID PK, user FK (cascade), unique token, expiry, revoked flag
+- Indexes on email, username, user_id, token for fast lookups
+
+#### 4. User Repository (`internal/database/users.go`)
+- `CreateUser()` - Register new user with hashed password
+- `GetUserByEmail()` / `GetUserByUsername()` / `GetUserByID()` - Lookups
+- `UpdateUserProfile()` - Update username and avatar
+- `SaveRefreshToken()` - Persist refresh token
+- `GetRefreshToken()` - Validate refresh token
+- `RevokeRefreshToken()` - Revoke single token
+- `RevokeAllUserTokens()` - Revoke all user tokens (security)
+- `CleanExpiredTokens()` - Cleanup expired/revoked tokens
+
+#### 5. Auth HTTP Handlers (`cmd/server/auth_handlers.go`)
+- **POST `/api/auth/register`** - Create account
+  - Validates username (3+ chars), email, password (8+ chars)
+  - Checks for duplicate email/username
+  - Returns JWT token pair + user profile
+- **POST `/api/auth/login`** - Login
+  - Email + password validation
+  - Returns JWT token pair + user profile
+- **POST `/api/auth/refresh`** - Refresh access token
+  - Validates refresh token, revokes old, issues new pair
+- **POST `/api/auth/logout`** - Logout
+  - Revokes refresh token
+- **GET `/api/users/me`** (protected) - Get current user profile
+- **PUT `/api/users/me`** (protected) - Update username/avatar
+- **GET `/api/users/{id}`** (protected) - Get public user info
+
+#### 6. WebSocket Token Auth (`internal/websocket/handler.go`)
+- Accept `?token=<JWT>` query parameter on WebSocket connect
+- Validates token, extracts userID and username
+- Authenticated users' identity carried into room join
+- Falls back to guest mode for invalid/missing tokens
+
+#### 7. Config (`internal/config/config.go`)
+- `AuthConfig` with `secret_key`, `access_token_ttl`, `refresh_token_ttl`
+- Environment variables: `EXCALIDRAW_AUTH_*`
+- Defaults: 15min access, 7-day refresh
+
+### 🧠 Technical Decisions & Challenges
+
+**Decision 1: JWT over Session Cookies**
+- Stateless authentication scales better
+- No server-side session storage needed
+- Token contains all needed claims
+
+**Decision 2: Refresh Token Rotation**
+- Old refresh token revoked when issuing new pair
+- Prevents token reuse attacks
+- Refresh tokens stored in database for revocation capability
+
+**Decision 3: Bcrypt with DefaultCost**
+- Industry standard for password hashing
+- DefaultCost (10) provides good security/performance balance
+
+**Decision 4: Graceful Degradation**
+- Auth routes only registered when database available
+- WebSocket accepts connections without tokens (guest mode)
+- Backward compatible with existing unauthenticated flow
+
+**Decision 5: Context-Based Auth Info**
+- Middleware injects user info into request context
+- Handlers extract via type assertion
+- Clean separation between auth and business logic
+
+### 📊 Comparison: Before vs After
+
+| Feature | Before (Phase 9) | After (Phase 10) |
+|---------|-------------------|-------------------|
+| User Accounts | ❌ None | ✅ Register/login |
+| Authentication | ❌ Guest only | ✅ JWT + guest fallback |
+| Password Security | ❌ N/A | ✅ Bcrypt hashing |
+| Token Management | ❌ N/A | ✅ Access + refresh rotation |
+| Protected Routes | ❌ None | ✅ JWT middleware |
+| User Profiles | ❌ None | ✅ CRUD endpoints |
+| WebSocket Auth | ❌ None | ✅ Token query param |
+| Token Revocation | ❌ N/A | ✅ Per-token + all-user |
+
+### 📁 Files Created
+
+**Backend (Go):**
+- `excalidraw-be/internal/auth/auth.go` - Auth service (JWT, bcrypt)
+- `excalidraw-be/internal/auth/middleware.go` - JWT middleware
+- `excalidraw-be/internal/database/users.go` - User repository
+- `excalidraw-be/internal/database/migrations/000003_user_auth.up.sql` - Migration
+- `excalidraw-be/internal/database/migrations/000003_user_auth.down.sql` - Rollback
+- `excalidraw-be/cmd/server/auth_handlers.go` - Auth HTTP handlers
+
+### 📁 Files Modified
+
+**Backend (Go):**
+- `excalidraw-be/internal/config/config.go` - Added AuthConfig
+- `excalidraw-be/config.yaml` - Added auth section
+- `excalidraw-be/cmd/server/main.go` - Auth init, routes, hub update
+- `excalidraw-be/internal/websocket/handler.go` - Token auth, auth fields
+- `excalidraw-be/.env.example` - Auth env vars
+
+**Dependencies:**
+- `github.com/golang-jwt/jwt/v5` - JWT library
+- `golang.org/x/crypto` - Bcrypt password hashing
+
+### ✅ Build Verification
+
+- ✅ Backend: `go build ./cmd/server` passes
+- ✅ Backend: `go vet ./...` passes
+- ✅ Backend: `go fmt ./...` passes
+
+### ⏭️ Next Steps
+
+- **Phase 11**: Advanced Room Features (password protection, roles, permissions)
+- Frontend: Implement login/register UI
+- Frontend: Store JWT tokens, add auth headers to API calls
+- Frontend: Pass token to WebSocket connection
+
+---
+
 ## ✅ Phase 9: File Storage (MinIO/S3) Completed
 **Date:** 2026-04-21
 

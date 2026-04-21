@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 
+	"github.com/you/excalidraw-be/internal/auth"
 	"github.com/you/excalidraw-be/internal/config"
 	"github.com/you/excalidraw-be/internal/database"
 	appmiddleware "github.com/you/excalidraw-be/internal/middleware"
@@ -90,8 +91,14 @@ func main() {
 		defer storageClient.Close()
 	}
 
+	authService := auth.NewAuthService(
+		cfg.Auth.SecretKey,
+		cfg.Auth.AccessTokenTTL,
+		cfg.Auth.RefreshTokenTTL,
+	)
+
 	// Initialize WebSocket hub
-	hub := websocket.NewHub(roomManager)
+	hub := websocket.NewHub(roomManager, authService)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -114,6 +121,23 @@ func main() {
 		r.Get("/api/stats", statsHandler(roomManager))
 		r.Get("/api/rooms/{id}/link", roomLinkHandler)
 	})
+
+	// Auth routes (public)
+	if dbClient != nil {
+		authHandler := NewAuthHandler(authService, dbClient)
+		r.Post("/api/auth/register", authHandler.Register)
+		r.Post("/api/auth/login", authHandler.Login)
+		r.Post("/api/auth/refresh", authHandler.Refresh)
+		r.Post("/api/auth/logout", authHandler.Logout)
+
+		// Protected routes (require JWT)
+		r.Group(func(r chi.Router) {
+			r.Use(auth.JWTMiddleware(authService))
+			r.Get("/api/users/me", authHandler.GetProfile)
+			r.Put("/api/users/me", authHandler.UpdateProfile)
+			r.Get("/api/users/{id}", authHandler.GetUserByID)
+		})
+	}
 
 	// File upload/download routes (multipart support)
 	if storageClient != nil {
@@ -139,6 +163,7 @@ func main() {
 			zap.String("port", cfg.Server.Port),
 			zap.Bool("persistence", roomManager.HasPersistence()),
 			zap.Bool("file_storage", storageClient != nil),
+			zap.Bool("auth", dbClient != nil),
 		)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("Server failed", zap.Error(err))

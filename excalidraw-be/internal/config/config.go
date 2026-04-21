@@ -13,6 +13,7 @@ type Config struct {
 	Room      RoomConfig      `mapstructure:"room"`
 	Database  DatabaseConfig  `mapstructure:"database"`
 	Storage   StorageConfig   `mapstructure:"storage"`
+	Auth      AuthConfig      `mapstructure:"auth"`
 	Log       LogConfig       `mapstructure:"log"`
 }
 
@@ -56,6 +57,12 @@ type StorageConfig struct {
 	Region    string `mapstructure:"region"`
 	UseSSL    bool   `mapstructure:"use_ssl"`
 	Public    bool   `mapstructure:"public"`
+}
+
+type AuthConfig struct {
+	SecretKey       string        `mapstructure:"secret_key"`
+	AccessTokenTTL  time.Duration `mapstructure:"access_token_ttl"`
+	RefreshTokenTTL time.Duration `mapstructure:"refresh_token_ttl"`
 }
 
 type LogConfig struct {
@@ -135,6 +142,11 @@ func setDefaults() {
 	viper.SetDefault("storage.region", "us-east-1")
 	viper.SetDefault("storage.use_ssl", false)
 	viper.SetDefault("storage.public", false)
+
+	// Auth defaults
+	viper.SetDefault("auth.secret_key", "change-me-in-production-please")
+	viper.SetDefault("auth.access_token_ttl", 15*time.Minute)
+	viper.SetDefault("auth.refresh_token_ttl", 7*24*time.Hour)
 
 	// Log defaults
 	viper.SetDefault("log.level", "info")

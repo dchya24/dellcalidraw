@@ -713,64 +713,64 @@ Server → Client:
 
 ---
 
-### Phase 10: User Authentication & Authorization
+### Phase 10: User Authentication & Authorization ✅ COMPLETED (2026-04-21)
 **Goal**: Persistent user accounts with secure authentication
 
 **Deliverables**:
 - User registration and login
-- JWT-based authentication
-- OAuth integration (Google, GitHub)
-- Protected routes and permissions
+- JWT-based authentication with refresh token rotation
+- Protected routes with JWT middleware
 - User profile management
+- WebSocket token authentication
 
 **Technical Tasks**:
-- [ ] Design user database schema
-- [ ] Implement password hashing (bcrypt)
-- [ ] Create JWT token generation/validation
-- [ ] Add registration endpoint
-- [ ] Add login endpoint
-- [ ] Implement OAuth flow (Google/GitHub)
-- [ ] Create protected middleware
-- [ ] Add user profile endpoints
-- [ ] Implement session refresh tokens
+- [x] Design user database schema (users + refresh_tokens tables)
+- [x] Implement password hashing (bcrypt)
+- [x] Create JWT token generation/validation (HS256)
+- [x] Add registration endpoint
+- [x] Add login endpoint
+- [x] Create protected middleware (JWTMiddleware)
+- [x] Add user profile endpoints (GET/PUT /me, GET /{id})
+- [x] Implement session refresh tokens with rotation
+- [x] Add WebSocket token auth via query parameter
+- [ ] Implement OAuth flow (Google/GitHub) - deferred to future phase
 
 **API Endpoints**:
-```typescript
-// Authentication
-POST /api/auth/register - Create new account
-POST /api/auth/login - Login with email/password
-POST /api/auth/logout - Invalidate session
-POST /api/auth/refresh - Refresh JWT token
+```
+POST /api/auth/register    - Create new account
+POST /api/auth/login       - Login with email/password
+POST /api/auth/logout      - Invalidate session
+POST /api/auth/refresh     - Refresh JWT token
 
-// OAuth
-GET /api/auth/oauth/google - Start Google OAuth
-GET /api/auth/oauth/github - Start GitHub OAuth
-GET /api/auth/oauth/callback - OAuth callback
-
-// User profiles
-GET /api/users/me - Get current user profile
-PUT /api/users/me - Update profile
-GET /api/users/:id - Get public user info
+GET  /api/users/me         - Get current user profile (protected)
+PUT  /api/users/me         - Update profile (protected)
+GET  /api/users/{id}       - Get public user info (protected)
 ```
 
 **WebSocket Authentication**:
-```typescript
-// Connect with token
-socket = io(url, {
-  auth: { token: jwtToken }
-})
-
-// Server validates token on connection
+```
+ws://localhost:8080/ws?token=<JWT_ACCESS_TOKEN>
+// Server validates token on connection, falls back to guest mode
 ```
 
-**Success Criteria**:
-- Users can register and login
-- JWT tokens work for API and WebSocket
-- OAuth flow works seamlessly
-- Passwords are securely hashed
-- Session refresh works correctly
+**Files Created**:
+- `internal/auth/auth.go` - Auth service (JWT, bcrypt)
+- `internal/auth/middleware.go` - JWT middleware
+- `internal/database/users.go` - User repository
+- `internal/database/migrations/000003_user_auth.up.sql` - Migration
+- `internal/database/migrations/000003_user_auth.down.sql` - Rollback
+- `cmd/server/auth_handlers.go` - Auth HTTP handlers
 
-**Estimated Time**: 5-7 days
+**Files Modified**:
+- `internal/config/config.go` - AuthConfig
+- `config.yaml` - Auth section
+- `cmd/server/main.go` - Auth init, routes
+- `internal/websocket/handler.go` - Token auth, auth fields
+- `.env.example` - Auth env vars
+
+**Dependencies Added**:
+- `github.com/golang-jwt/jwt/v5` - JWT library
+- `golang.org/x/crypto` - Bcrypt password hashing
 
 ---
 

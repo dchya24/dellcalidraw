@@ -12,17 +12,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
+	"github.com/you/excalidraw-be/internal/auth"
 	"github.com/you/excalidraw-be/internal/room"
 )
 
 // Connection represents an active WebSocket connection
 type Connection struct {
-	ID     string
-	Conn   *websocket.Conn
-	Send   chan []byte
-	RoomID string
-	UserID string
-	mu     sync.Mutex
+	ID           string
+	Conn         *websocket.Conn
+	Send         chan []byte
+	RoomID       string
+	UserID       string
+	AuthUserID   string
+	AuthUsername string
+	mu           sync.Mutex
 }
 
 // Hub manages active connections
@@ -32,17 +35,19 @@ type Hub struct {
 	roomManager       *room.RoomManager
 	rateLimiter       *RateLimiter
 	cursorRateLimiter *CursorRateLimiter
+	authService       *auth.AuthService
 	mu                sync.RWMutex
 }
 
 // NewHub creates a new connection hub
-func NewHub(rm *room.RoomManager) *Hub {
+func NewHub(rm *room.RoomManager, authService *auth.AuthService) *Hub {
 	return &Hub{
 		connections:       make(map[string]*Connection),
 		userConns:         make(map[string]string),
 		roomManager:       rm,
 		rateLimiter:       NewRateLimiter(),
 		cursorRateLimiter: NewCursorRateLimiter(),
+		authService:       authService,
 	}
 }
 
@@ -54,11 +59,30 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var authenticatedUserID string
+	var authenticatedUsername string
+
+	if h.authService != nil {
+		tokenStr := r.URL.Query().Get("token")
+		if tokenStr != "" {
+			claims, err := h.authService.ValidateAccessToken(tokenStr)
+			if err == nil && claims != nil {
+				authenticatedUserID = claims.UserID
+				authenticatedUsername = claims.Username
+				slog.Info("WebSocket authenticated", "userID", authenticatedUserID, "username", authenticatedUsername)
+			} else {
+				slog.Debug("WebSocket token invalid, connecting as guest", "error", err)
+			}
+		}
+	}
+
 	// Create connection object
 	connection := &Connection{
-		ID:   uuid.New().String(),
-		Conn: conn,
-		Send: make(chan []byte, 256),
+		ID:           uuid.New().String(),
+		Conn:         conn,
+		Send:         make(chan []byte, 256),
+		AuthUserID:   authenticatedUserID,
+		AuthUsername: authenticatedUsername,
 	}
 
 	// Register connection
@@ -327,14 +351,23 @@ func (h *Hub) handleJoinRoom(conn *Connection, payload map[string]interface{}) {
 	// Generate user color (random for now)
 	color := generateColor()
 
+	username := joinMsg.Username
+	if conn.AuthUsername != "" {
+		username = conn.AuthUsername
+	}
+
 	// Create user
 	user := &room.User{
 		ID:       uuid.New().String(),
-		Username: joinMsg.Username,
+		Username: username,
 		Color:    color,
 		ConnID:   conn.ID,
 		JoinedAt: time.Now(),
 		LastSeen: time.Now(),
+	}
+
+	if conn.AuthUserID != "" {
+		user.ID = conn.AuthUserID
 	}
 
 	// Update connection

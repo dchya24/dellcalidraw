@@ -35,6 +35,11 @@ storage:
   use_ssl: false
   public: false
 
+auth:
+  secret_key: "change-me-in-production-please"
+  access_token_ttl: 15m
+  refresh_token_ttl: 168h
+
 log:
   level: info
   format: json

@@ -1,37 +1,55 @@
 import { useEffect, useState } from "react";
 import Whiteboard from "./components/Whiteboard";
+import AuthModal from "./components/AuthModal";
 import { getRoomIdFromURL } from "./utils/roomURL";
 import { roomService } from "./services/roomService";
+import { useAuthStore } from "./store/useAuthStore";
 
 function App() {
-  const [username] = useState(() => {
-    // Get or generate username
+  const { user, isAuthenticated, clearAuth } = useAuthStore();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  const username = user?.username || (() => {
     const saved = localStorage.getItem("username");
     if (saved) return saved;
-
     const newUsername = `User_${Math.random().toString(36).substring(2, 8)}`;
     localStorage.setItem("username", newUsername);
     return newUsername;
-  });
+  })();
 
-  // Auto-join room if URL contains room parameter
   useEffect(() => {
     const roomId = getRoomIdFromURL();
-    console.log("Room ID:", roomId, username);
     if (roomId && username) {
-      // Add small delay to ensure everything is ready
       const timer = setTimeout(() => {
         roomService
           .joinRoom(roomId, username)
-          .then(() => console.log("✅ Auto-joined room:", roomId))
-          .catch((err) => console.error("❌ Failed to auto-join room:", err));
+          .then(() => console.log("Auto-joined room:", roomId))
+          .catch((err) => console.error("Failed to auto-join room:", err));
       }, 100);
 
       return () => clearTimeout(timer);
     }
   }, [username]);
 
-  return <Whiteboard username={username} />;
+  const handleLogout = () => {
+    clearAuth();
+    localStorage.removeItem("username");
+  };
+
+  return (
+    <>
+      <Whiteboard
+        username={username}
+        isAuthenticated={isAuthenticated}
+        onOpenAuth={() => setAuthModalOpen(true)}
+        onLogout={handleLogout}
+      />
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+      />
+    </>
+  );
 }
 
 export default App;

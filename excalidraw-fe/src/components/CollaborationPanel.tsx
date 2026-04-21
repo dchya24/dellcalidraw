@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Users, Copy, RefreshCw, Wifi, WifiOff, Loader2, ChevronDown, AlertCircle } from "lucide-react";
+import { Users, Copy, RefreshCw, Wifi, WifiOff, Loader2, ChevronDown, AlertCircle, User } from "lucide-react";
 import { roomService } from "../services/roomService";
 import { copyShareableLink } from "../utils/roomURL";
 import { useThemeStore } from "../store/useThemeStore";
@@ -7,12 +7,14 @@ import { useThemeStore } from "../store/useThemeStore";
 interface CollaborationPanelProps {
   roomId: string;
   username: string;
+  isAuthenticated?: boolean;
   onRegenerateRoomId: () => void;
 }
 
 export default function CollaborationPanel({
   roomId,
   username,
+  isAuthenticated = false,
   onRegenerateRoomId,
 }: CollaborationPanelProps) {
   const [copied, setCopied] = useState(false);
@@ -25,6 +27,7 @@ export default function CollaborationPanel({
   const [participants, setParticipants] = useState(() => roomService.getParticipants());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { theme } = useThemeStore();
+  const isDark = theme === 'dark';
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -324,7 +327,7 @@ export default function CollaborationPanel({
                           style={{ backgroundColor: participant.color }}
                         />
                         <span className={`text-xs flex-1 truncate ${
-                          theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                          isDark ? 'text-gray-300' : 'text-gray-700'
                         }`}>
                           {participant.username}
                           {participant.id === roomService.getUsername() && ' (You)'}
@@ -336,6 +339,16 @@ export default function CollaborationPanel({
               )}
 
               <div className={`pt-2 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+                {isAuthenticated && (
+                  <div className={`flex items-center gap-2 px-2 py-1.5 rounded mb-2 ${
+                    isDark ? 'bg-blue-900/20' : 'bg-blue-50'
+                  }`}>
+                    <User size={14} className={isDark ? 'text-blue-400' : 'text-blue-600'} />
+                    <span className={`text-xs ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                      Signed in as <strong>{username}</strong>
+                    </span>
+                  </div>
+                )}
                 <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
                   Share the room link with others to collaborate in real-time.
                 </p>

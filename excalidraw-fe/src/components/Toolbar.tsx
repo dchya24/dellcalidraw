@@ -8,6 +8,9 @@ import {
   Moon,
   Sun,
   Sidebar,
+  LogIn,
+  LogOut,
+  User,
 } from "lucide-react";
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
 import { useThemeStore } from "../store/useThemeStore";
@@ -20,9 +23,12 @@ interface ToolbarProps {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   onToggleSidebar?: () => void;
   username?: string;
+  isAuthenticated?: boolean;
+  onOpenAuth?: () => void;
+  onLogout?: () => void;
 }
 
-export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Guest" }: ToolbarProps) {
+export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Guest", isAuthenticated = false, onOpenAuth, onLogout }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { theme, toggleTheme } = useThemeStore();
   const {
@@ -207,6 +213,7 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
         <CollaborationPanel
           roomId={roomId}
           username={username}
+          isAuthenticated={isAuthenticated}
           onRegenerateRoomId={() => regenerateRoomId(roomId)}
         />
 
@@ -270,6 +277,40 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
             </div>
           </div>
         </div>
+
+        {/* Auth Button */}
+        {isAuthenticated ? (
+          <div className="flex items-center gap-1">
+            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-sm ${
+              theme === "dark" ? "bg-gray-700 text-gray-300" : "bg-gray-100 text-gray-700"
+            }`}>
+              <User size={14} />
+              <span className="text-xs max-w-20 truncate">{username}</span>
+            </div>
+            <button
+              onClick={onLogout}
+              className={`p-2 rounded-lg transition-colors ${
+                theme === "dark" ? "hover:bg-gray-700 text-gray-300" : "hover:bg-gray-100 text-gray-600"
+              }`}
+              title="Sign out"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onOpenAuth}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
+              theme === "dark"
+                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                : "bg-blue-600 hover:bg-blue-700 text-white"
+            }`}
+            title="Sign in"
+          >
+            <LogIn size={16} />
+            <span className="hidden sm:inline">Sign In</span>
+          </button>
+        )}
 
         {/* Theme Toggle */}
         <button

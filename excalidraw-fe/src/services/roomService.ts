@@ -288,16 +288,35 @@ class RoomService {
   }
 
   private getDefaultWsUrl(): string {
-    // Check for environment variable first
     const envWsUrl = import.meta.env.VITE_WS_URL;
+    let baseUrl: string;
+
     if (envWsUrl) {
-      return envWsUrl;
+      baseUrl = envWsUrl;
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname;
+      baseUrl = `${protocol}//${host}:8080/ws`;
     }
 
-    // Fallback to dynamic URL based on current location
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    return `${protocol}//${host}:8080/ws`;
+    const token = this.getStoredAccessToken();
+    if (token) {
+      const separator = baseUrl.includes('?') ? '&' : '?';
+      return `${baseUrl}${separator}token=${encodeURIComponent(token)}`;
+    }
+
+    return baseUrl;
+  }
+
+  private getStoredAccessToken(): string | null {
+    try {
+      const raw = localStorage.getItem('auth-storage');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed?.state?.accessToken || null;
+    } catch {
+      return null;
+    }
   }
 
   private setupUnloadHandler(): void {

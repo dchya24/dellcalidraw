@@ -26,9 +26,12 @@ import ConflictResolutionPanel from "./ConflictResolutionPanel";
 
 interface WhiteboardProps {
   username: string;
+  isAuthenticated: boolean;
+  onOpenAuth: () => void;
+  onLogout: () => void;
 }
 
-export default function Whiteboard({ username }: WhiteboardProps) {
+export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLogout }: WhiteboardProps) {
   const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const applyingRemoteChangesRef = useRef(false); // Track when applying remote changes to prevent loops
   const isApplyingChangesRef = useRef(false); // Additional lock to prevent race conditions
@@ -767,6 +770,9 @@ export default function Whiteboard({ username }: WhiteboardProps) {
           excalidrawAPI={excalidrawAPI}
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           username={username}
+          isAuthenticated={isAuthenticated}
+          onOpenAuth={onOpenAuth}
+          onLogout={onLogout}
         />
 
         {

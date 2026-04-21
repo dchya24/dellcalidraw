@@ -20,28 +20,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # MinIO file storage
-  minio:
-    image: minio/minio:latest
-    container_name: excalidraw-minio-dev
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio-dev-data:/data
-    restart: unless-stopped
-    networks:
-      - excalidraw-network
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Backend service (development mode)
   backend-dev:
     build:
@@ -59,18 +37,18 @@ services:
       - EXCALIDRAW_DATABASE_PASSWORD=excalidraw
       - EXCALIDRAW_DATABASE_DBNAME=excalidraw
       - EXCALIDRAW_DATABASE_SSLMODE=disable
-      - EXCALIDRAW_STORAGE_ENDPOINT=minio:9000
-      - EXCALIDRAW_STORAGE_ACCESS_KEY=minioadmin
-      - EXCALIDRAW_STORAGE_SECRET_KEY=minioadmin
-      - EXCALIDRAW_STORAGE_BUCKET=excalidraw-files
-      - EXCALIDRAW_STORAGE_REGION=us-east-1
-      - EXCALIDRAW_STORAGE_USE_SSL=false
+      # Storage configuration - set these via environment variables or .env file
+      - EXCALIDRAW_STORAGE_ENDPOINT=${STORAGE_ENDPOINT:-}
+      - EXCALIDRAW_STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY:-}
+      - EXCALIDRAW_STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY:-}
+      - EXCALIDRAW_STORAGE_BUCKET=${STORAGE_BUCKET:-excalidraw-files}
+      - EXCALIDRAW_STORAGE_REGION=${STORAGE_REGION:-us-east-1}
+      - EXCALIDRAW_STORAGE_USE_SSL=${STORAGE_USE_SSL:-false}
+      - EXCALIDRAW_STORAGE_PUBLIC=${STORAGE_PUBLIC:-false}
     env_file:
       - ./excalidraw-be/.env
     depends_on:
       postgres:
-        condition: service_healthy
-      minio:
         condition: service_healthy
     volumes:
       - ./excalidraw-be:/app
@@ -103,4 +81,3 @@ networks:
 
 volumes:
   postgres-dev-data:
-  minio-dev-data:

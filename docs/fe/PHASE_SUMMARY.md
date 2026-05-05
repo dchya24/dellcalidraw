@@ -1,5 +1,75 @@
 # Whiteboard Project - Phase Summary
 
+## ✅ Phase 10.1: Frontend Auth UI Integration Completed
+**Date:** 2026-05-05
+
+### 🛠 Features Implemented
+
+#### 1. Auth Modal Component (`components/AuthModal.tsx`)
+- Login/Register form with modal UI
+- Form validation (username 3+, password 8+)
+- Error handling with user-friendly messages
+- Loading state with spinner
+- Toggle between login/register modes
+- Dark/light mode support
+
+#### 2. Auth Store (`store/useAuthStore.ts`)
+- Zustand store with persist middleware
+- User, tokens, authentication state
+- `setAuth()`, `setTokens()`, `clearAuth()`, `getAccessToken()`
+- localStorage persistence (`auth-storage`)
+
+#### 3. API Service (`services/api.ts`)
+- `register()`, `login()`, `refreshToken()`, `logout()`
+- Bearer token in Authorization header
+- AuthError class with codes: `email_taken`, `username_taken`, `invalid_credentials`
+
+#### 4. WebSocket Token Integration (`services/roomService.ts`)
+- JWT passed via `?token=<JWT>` query parameter
+- Token extracted from localStorage on connect
+- Authenticated users' identity carried into room join
+- Guest fallback for invalid/missing tokens
+
+#### 5. Toolbar Auth UI (`components/Toolbar.tsx`)
+- "Sign In" button when not authenticated
+- User badge + "Sign out" button when authenticated
+- Dark/light mode styled buttons
+
+#### 6. App Integration (`App.tsx`)
+- AuthModal open/close state management
+- `handleLogout()` calls logout API + clears tokens
+- Props passed to Whiteboard component
+
+### 📊 Comparison: Before vs After
+
+| Feature | Before | After |
+|---------|--------|-------|
+| Login/Register UI | ❌ None | ✅ Modal form |
+| Token Storage | Backend only | ✅ localStorage |
+| WebSocket Auth | Guest only | ✅ JWT token |
+| Logout API | Not called | ✅ Called on logout |
+| Auth State in UI | ❌ None | ✅ User badge |
+
+### 📁 Files Modified
+
+**Frontend:**
+- `src/App.tsx` - Logout calls API, imports apiService
+- `src/components/Toolbar.tsx` - Already had auth UI
+- `src/components/AuthModal.tsx` - Already implemented
+- `src/services/api.ts` - Already implemented
+- `src/store/useAuthStore.ts` - Already implemented
+- `src/services/roomService.ts` - Already passes token to WebSocket
+- `src/types/auth.ts` - Already has types
+
+### ⏭️ Next Steps
+
+- **Phase 11**: Advanced Room Features (password protection, roles, permissions)
+- Auto-refresh tokens before expiry
+- Remember me functionality
+- Password reset flow
+
+---
+
 ## ✅ Phase 10: User Authentication & Authorization Completed
 **Date:** 2026-04-21
 

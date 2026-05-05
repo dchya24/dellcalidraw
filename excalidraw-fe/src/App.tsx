@@ -4,9 +4,10 @@ import AuthModal from "./components/AuthModal";
 import { getRoomIdFromURL } from "./utils/roomURL";
 import { roomService } from "./services/roomService";
 import { useAuthStore } from "./store/useAuthStore";
+import { apiService } from "./services/api";
 
 function App() {
-  const { user, isAuthenticated, clearAuth } = useAuthStore();
+  const { user, isAuthenticated, accessToken, refreshToken, clearAuth } = useAuthStore();
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   const username = user?.username || (() => {
@@ -31,9 +32,17 @@ function App() {
     }
   }, [username]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const currentRefreshToken = refreshToken;
     clearAuth();
     localStorage.removeItem("username");
+    if (currentRefreshToken) {
+      try {
+        await apiService.logout(currentRefreshToken);
+      } catch (err) {
+        console.error("Logout API error:", err);
+      }
+    }
   };
 
   return (

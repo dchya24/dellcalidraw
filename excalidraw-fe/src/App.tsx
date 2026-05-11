@@ -7,7 +7,7 @@ import { useAuthStore } from "./store/useAuthStore";
 import { apiService } from "./services/api";
 
 function App() {
-  const { user, isAuthenticated, accessToken, refreshToken, clearAuth } = useAuthStore();
+  const { user, isAuthenticated, refreshToken, clearAuth } = useAuthStore();
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   const username = user?.username || (() => {

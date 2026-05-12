@@ -1,5 +1,177 @@
 # Whiteboard Project - Phase Summary
 
+## ✅ Phase 11: Advanced Room Features (Password, Roles, Permissions) Completed
+**Date:** 2026-05-12
+
+### 🛠 Features Implemented
+
+#### 1. Database Schema (`internal/database/migrations/000004_room_permissions.up.sql`)
+- `rooms` table extended with: `owner_id`, `password_hash`, `is_public`, `allow_anonymous`
+- `room_members` table: UUID PK, room FK, user FK, role (owner/editor/viewer), invited_by
+- `room_invitations` table: UUID PK, room FK, email, role, token, expires_at, used_at
+- Indexes for fast lookups on room_id, user_id, token, email
+
+#### 2. Room Permissions Repository (`internal/database/room_permissions.go`)
+- `SetRoomPassword()` / `VerifyRoomPassword()` / `RemoveRoomPassword()` - bcrypt password protection
+- `HasRoomPassword()` - Check if room requires password
+- `SetRoomOwner()` / `GetRoomOwner()` - Room ownership management
+- `GetRoomSettings()` / `UpdateRoomSettings()` - Public/anonymous settings
+- `AddRoomMember()` / `GetRoomMember()` / `GetRoomMembers()` - Member management
+- `UpdateRoomMemberRole()` / `RemoveRoomMember()` - Role updates
+- `GetUserRole()` - Get user's role in a room
+- `CreateRoomInvitation()` / `GetRoomInvitationByToken()` / `UseRoomInvitation()` - Invitation system
+- `GetRoomInvitations()` / `DeleteRoomInvitation()` - Invitation management
+- `CanUserPerformAction()` - Permission checking (view, edit, manage_members, change_settings, delete_room)
+
+#### 3. WebSocket Permission Handlers (`internal/websocket/handler_permissions.go`)
+- `handleJoinRoomWithPassword()` - Join with optional password verification
+- `handleGetRoomSettings()` - Get room settings and user's role
+- `handleSetRoomPassword()` - Set/remove room password (owner only)
+- `handleUpdateRoomSettings()` - Update public/anonymous settings (owner only)
+- `handleGetRoomMembers()` - List room members with roles
+- `handleUpdateMemberRole()` - Change member role (owner only)
+- `handleRemoveMember()` - Remove member from room
+- `handleCreateInvitation()` - Create invitation link (owner only)
+- `handleAcceptInvitation()` - Accept invitation and join as member
+- `handleGetInvitations()` / `handleDeleteInvitation()` - Manage invitations
+- `checkEditPermission()` - Permission check for element updates
+
+#### 4. WebSocket Message Types (`internal/websocket/types.go`)
+- `JoinRoomWithPasswordPayload` - Join with password
+- `RoomSettingsPayload` - Room settings response
+- `SetRoomPasswordPayload` / `UpdateRoomSettingsPayload` - Settings updates
+- `RoomMemberPayload` / `RoomMembersListPayload` - Member data
+- `UpdateMemberRolePayload` / `RemoveMemberPayload` - Member management
+- `CreateInvitationPayload` / `InvitationPayload` / `InvitationsListPayload` - Invitations
+- `PermissionDeniedPayload` / `PasswordRequiredPayload` - Error responses
+
+#### 5. Database Adapter (`internal/websocket/db_adapter.go`)
+- `DBClientAdapter` implements `DBClient` interface
+- Bridges `database.PostgresClient` to WebSocket handler
+- Type conversions between database and WebSocket types
+
+#### 6. Frontend Types (`src/types/roomPermissions.ts`)
+- `RoomRole` type: 'owner' | 'editor' | 'viewer'
+- `RoomSettings`, `RoomMember`, `RoomInvitation` interfaces
+- WebSocket payload types for all permission operations
+
+#### 7. Frontend Service (`src/services/roomPermissionsService.ts`)
+- `getRoomSettings()` / `setRoomPassword()` / `updateRoomSettings()`
+- `getRoomMembers()` / `updateMemberRole()` / `removeMember()`
+- `createInvitation()` / `acceptInvitation()` / `getInvitations()` / `deleteInvitation()`
+- `joinRoomWithPassword()` - Join password-protected room
+- Event listeners for settings, members, invitations, permission denied, password required
+
+#### 8. Room Settings Panel (`src/components/RoomSettingsPanel.tsx`)
+- Tabbed UI: Settings, Members, Invitations
+- Settings tab: Password protection toggle, public room toggle, allow anonymous toggle
+- Members tab: List members with roles, change role dropdown, remove member button
+- Invitations tab: Create invitation form, copy invite link, delete invitation
+- Role icons (Shield/Edit/Eye) for visual role indication
+- Dark/light mode support
+
+#### 9. Room Password Dialog (`src/components/RoomPasswordDialog.tsx`)
+- Modal dialog for password-protected rooms
+- Password input with validation
+- Join/Cancel buttons
+- Dark/light mode support
+
+#### 10. UI Integration
+- `CollaborationPanel.tsx` - Added Settings button when connected
+- `Toolbar.tsx` - Pass `onOpenRoomSettings` handler
+- `Whiteboard.tsx` - Room settings panel and password dialog integration
+- Permission denied toast notifications
+
+### 🧠 Technical Decisions & Challenges
+
+**Decision 1: First Authenticated User Becomes Owner**
+- When setting password or creating invitation, if no owner exists, the authenticated user becomes owner
+- Allows organic room ownership without explicit "create room" flow
+
+**Decision 2: Role Hierarchy**
+- Owner: Full control (settings, members, invitations, delete room)
+- Editor: Can edit elements (default for authenticated users)
+- Viewer: Read-only access
+- Anonymous: Depends on `allow_anonymous` setting
+
+**Decision 3: Graceful Degradation**
+- All permission features require database
+- Without database, rooms work as before (open, no permissions)
+- Permission checks return `true` by default if database unavailable
+
+**Decision 4: Invitation Token System**
+- 64-character hex tokens (32 bytes random)
+- 7-day expiration by default
+- Single-use (marked as used after acceptance)
+- Optional email association for tracking
+
+**Decision 5: Password Protection with bcrypt**
+- Room passwords hashed with bcrypt (DefaultCost)
+- Empty password removes protection
+- Password required before WebSocket join completes
+
+### 📊 Comparison: Before vs After
+
+| Feature | Before (Phase 10) | After (Phase 11) |
+|---------|-------------------|-------------------|
+| Room Password | ❌ None | ✅ bcrypt protected |
+| User Roles | ❌ None | ✅ Owner/Editor/Viewer |
+| Permission Checks | ❌ None | ✅ Role-based |
+| Room Settings | ❌ None | ✅ Public/Anonymous toggles |
+| Member Management | ❌ None | ✅ Add/Remove/Change role |
+| Invitations | ❌ None | ✅ Token-based with expiry |
+| Room Ownership | ❌ None | ✅ First auth user claims |
+| Settings UI | ❌ None | ✅ Tabbed panel |
+| Password Dialog | ❌ None | ✅ Modal on join |
+
+### 📁 Files Created
+
+**Backend (Go):**
+- `excalidraw-be/internal/database/migrations/000004_room_permissions.up.sql`
+- `excalidraw-be/internal/database/migrations/000004_room_permissions.down.sql`
+- `excalidraw-be/internal/database/room_permissions.go`
+- `excalidraw-be/internal/websocket/handler_permissions.go`
+- `excalidraw-be/internal/websocket/db_adapter.go`
+
+**Frontend (React):**
+- `excalidraw-fe/src/types/roomPermissions.ts`
+- `excalidraw-fe/src/services/roomPermissionsService.ts`
+- `excalidraw-fe/src/components/RoomSettingsPanel.tsx`
+- `excalidraw-fe/src/components/RoomPasswordDialog.tsx`
+
+### 📁 Files Modified
+
+**Backend (Go):**
+- `excalidraw-be/internal/websocket/handler.go` - Added DBClient, permission message routing, edit permission check
+- `excalidraw-be/internal/websocket/types.go` - Added Phase 11 message types
+- `excalidraw-be/cmd/server/main.go` - Wire up DBClientAdapter to Hub
+
+**Frontend (React):**
+- `excalidraw-fe/src/components/CollaborationPanel.tsx` - Added Settings button
+- `excalidraw-fe/src/components/Toolbar.tsx` - Added onOpenRoomSettings prop
+- `excalidraw-fe/src/components/Whiteboard.tsx` - Integrated settings panel and password dialog
+
+### ✅ Build Verification
+
+- ✅ Backend: `go build ./cmd/server` passes
+- ✅ Backend: `go vet ./...` passes
+- ✅ Backend: `go fmt ./...` passes
+- ✅ Frontend: `npm run build` passes
+- ✅ No Go compilation errors
+- ✅ No TypeScript errors
+
+### ⏭️ Next Steps
+
+- **Phase 12**: Room Templates & Presets
+- Auto-refresh JWT tokens before expiry
+- Password reset flow
+- Email notifications for invitations
+- Room deletion with confirmation
+- Transfer ownership feature
+- Audit log for room actions
+
+---
+
 ## ✅ Phase 10.1: Frontend Auth UI Integration Completed
 **Date:** 2026-05-05
 

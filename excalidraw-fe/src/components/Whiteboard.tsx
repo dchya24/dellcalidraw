@@ -15,6 +15,7 @@ import { roomService } from "../services/roomService";
 import { elementSyncService } from "../services/elementSyncService";
 import { cursorService } from "../services/cursorService";
 import { selectionService } from "../services/selectionService";
+import { roomPermissionsService } from "../services/roomPermissionsService";
 import TabBar from "./TabBar";
 import Toolbar from "./Toolbar";
 import ConfirmDialog from "./ConfirmDialog";
@@ -23,6 +24,8 @@ import RemoteCursors from "./RemoteCursors";
 import FloatingTab from "./FloatingTab";
 import RoomInviteDialog from "./RoomInviteDialog";
 import ConflictResolutionPanel from "./ConflictResolutionPanel";
+import RoomSettingsPanel from "./RoomSettingsPanel";
+import RoomPasswordDialog from "./RoomPasswordDialog";
 import { LogIn, LogOut } from "lucide-react";
 
 interface WhiteboardProps {
@@ -60,6 +63,9 @@ export default function Whiteboard({
       elementCount: number;
     }>
   >([]);
+  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [pendingPasswordRoomId, setPendingPasswordRoomId] = useState<string | null>(null);
   const {
     files,
     activeFileId,
@@ -767,6 +773,49 @@ export default function Whiteboard({
     };
   }, [excalidrawAPI, isReady, roomId]);
 
+  // Handle password required for room join
+  useEffect(() => {
+    const unsubscribe = roomPermissionsService.onPasswordRequired((roomId) => {
+      console.log("🔐 Password required for room:", roomId);
+      setPendingPasswordRoomId(roomId);
+      setPasswordDialogOpen(true);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Handle permission denied
+  useEffect(() => {
+    const unsubscribe = roomPermissionsService.onPermissionDenied((payload) => {
+      console.warn("🚫 Permission denied:", payload.action, payload.message);
+      setConflictWarning(`Permission denied: ${payload.message}`);
+      setTimeout(() => setConflictWarning(null), 5000);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Handle password submit
+  const handlePasswordSubmit = useCallback((password: string) => {
+    if (!pendingPasswordRoomId) return;
+    
+    console.log("🔑 Submitting password for room:", pendingPasswordRoomId);
+    roomPermissionsService.joinRoomWithPassword(pendingPasswordRoomId, username, password);
+    setPasswordDialogOpen(false);
+    setPendingPasswordRoomId(null);
+  }, [pendingPasswordRoomId, username]);
+
+  // Handle password cancel
+  const handlePasswordCancel = useCallback(() => {
+    setPasswordDialogOpen(false);
+    setPendingPasswordRoomId(null);
+  }, []);
+
+  // Handle open room settings
+  const handleOpenRoomSettings = useCallback(() => {
+    setRoomSettingsOpen(true);
+  }, []);
+
   if (!isReady) {
     return (
       <div className="w-screen h-screen flex items-center justify-center">
@@ -791,6 +840,7 @@ export default function Whiteboard({
           isAuthenticated={isAuthenticated}
           onOpenAuth={onOpenAuth}
           onLogout={onLogout}
+          onOpenRoomSettings={handleOpenRoomSettings}
         />
 
         {floatingTabOpen && (
@@ -867,6 +917,21 @@ export default function Whiteboard({
 
         {/* Room Invite Dialog */}
         <RoomInviteDialog username={username} />
+
+        {/* Room Settings Panel */}
+        <RoomSettingsPanel
+          roomId={roomId || ""}
+          isOpen={roomSettingsOpen}
+          onClose={() => setRoomSettingsOpen(false)}
+        />
+
+        {/* Room Password Dialog */}
+        <RoomPasswordDialog
+          roomId={pendingPasswordRoomId || ""}
+          isOpen={passwordDialogOpen}
+          onSubmit={handlePasswordSubmit}
+          onCancel={handlePasswordCancel}
+        />
       </div>
       <TabBar
         onTabChange={handleTabChange}

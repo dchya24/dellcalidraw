@@ -26,9 +26,10 @@ interface ToolbarProps {
   isAuthenticated?: boolean;
   onOpenAuth?: () => void;
   onLogout?: () => void;
+  onOpenRoomSettings?: () => void;
 }
 
-export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Guest", isAuthenticated = false, onOpenAuth, onLogout }: ToolbarProps) {
+export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Guest", isAuthenticated = false, onOpenAuth, onLogout, onOpenRoomSettings }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { theme, toggleTheme } = useThemeStore();
   const {
@@ -215,6 +216,7 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
           username={username}
           isAuthenticated={isAuthenticated}
           onRegenerateRoomId={() => regenerateRoomId(roomId)}
+          onOpenSettings={onOpenRoomSettings}
         />
 
         {/* Import/Export Section */}

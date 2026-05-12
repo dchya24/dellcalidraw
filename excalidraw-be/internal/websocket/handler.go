@@ -36,7 +36,72 @@ type Hub struct {
 	rateLimiter       *RateLimiter
 	cursorRateLimiter *CursorRateLimiter
 	authService       *auth.AuthService
+	dbClient          DBClient // Database client for permissions (Phase 11)
 	mu                sync.RWMutex
+}
+
+// DBClient interface for database operations needed by Hub
+type DBClient interface {
+	GetRoomByKey(roomKey string) (string, error)
+	GetOrCreateRoom(roomKey string) (string, error)
+	HasRoomPassword(roomDBID string) (bool, error)
+	VerifyRoomPassword(roomDBID string, password string) (bool, error)
+	GetRoomSettings(roomDBID string) (*RoomSettingsDB, error)
+	UpdateRoomSettings(roomDBID string, isPublic, allowAnonymous bool) error
+	SetRoomPassword(roomDBID string, password string) error
+	RemoveRoomPassword(roomDBID string) error
+	SetRoomOwner(roomDBID string, userID string) error
+	GetRoomOwner(roomDBID string) (*string, error)
+	GetUserRole(roomDBID, userID string) (string, error)
+	CanUserPerformAction(roomDBID, userID string, action string) (bool, error)
+	GetRoomMembers(roomDBID string) ([]RoomMemberDB, error)
+	AddRoomMember(roomDBID, userID string, role string, invitedBy *string) error
+	UpdateRoomMemberRole(roomDBID, userID string, role string) error
+	RemoveRoomMember(roomDBID, userID string) error
+	CreateRoomInvitation(roomDBID string, email string, role string, invitedBy *string, expiresIn interface{}) (*RoomInvitationDB, error)
+	GetRoomInvitationByToken(token string) (*RoomInvitationDB, error)
+	UseRoomInvitation(token string) error
+	GetRoomInvitations(roomDBID string) ([]RoomInvitationDB, error)
+	DeleteRoomInvitation(invitationID string) error
+	GetUserByID(userID string) (*UserDB, error)
+}
+
+// RoomSettingsDB represents room settings from database
+type RoomSettingsDB struct {
+	OwnerID        *string
+	HasPassword    bool
+	IsPublic       bool
+	AllowAnonymous bool
+}
+
+// RoomMemberDB represents a room member from database
+type RoomMemberDB struct {
+	ID        string
+	RoomID    string
+	UserID    string
+	Username  string
+	Email     string
+	Role      string
+	InvitedBy *string
+}
+
+// RoomInvitationDB represents a room invitation from database
+type RoomInvitationDB struct {
+	ID        string
+	RoomID    string
+	Email     string
+	Role      string
+	Token     string
+	InvitedBy *string
+	ExpiresAt interface{}
+	UsedAt    interface{}
+}
+
+// UserDB represents a user from database
+type UserDB struct {
+	ID       string
+	Username string
+	Email    string
 }
 
 // NewHub creates a new connection hub
@@ -49,6 +114,11 @@ func NewHub(rm *room.RoomManager, authService *auth.AuthService) *Hub {
 		cursorRateLimiter: NewCursorRateLimiter(),
 		authService:       authService,
 	}
+}
+
+// SetDBClient sets the database client for permission checks
+func (h *Hub) SetDBClient(db DBClient) {
+	h.dbClient = db
 }
 
 // HandleWebSocket handles WebSocket connections
@@ -204,7 +274,7 @@ func (h *Hub) handleMessage(conn *Connection, message []byte) {
 	switch wsMsg.Type {
 	case "join_room":
 		slog.Info("🚪 Routing to handleJoinRoom", "connID", conn.ID)
-		h.handleJoinRoom(conn, wsMsg.Payload)
+		h.handleJoinRoomWithPassword(conn, wsMsg.Payload)
 	case "leave_room":
 		slog.Info("🚪 Routing to handleLeaveRoom", "connID", conn.ID)
 		h.handleLeaveRoom(conn, wsMsg.Payload)
@@ -226,6 +296,37 @@ func (h *Hub) handleMessage(conn *Connection, message []byte) {
 	case "file_deleted":
 		slog.Info("🗑️ Routing to handleFileDeleted", "connID", conn.ID)
 		h.handleFileDeleted(conn, wsMsg.Payload)
+	// Phase 11: Room Permissions
+	case "get_room_settings":
+		slog.Info("⚙️ Routing to handleGetRoomSettings", "connID", conn.ID)
+		h.handleGetRoomSettings(conn, wsMsg.Payload)
+	case "set_room_password":
+		slog.Info("🔐 Routing to handleSetRoomPassword", "connID", conn.ID)
+		h.handleSetRoomPassword(conn, wsMsg.Payload)
+	case "update_room_settings":
+		slog.Info("⚙️ Routing to handleUpdateRoomSettings", "connID", conn.ID)
+		h.handleUpdateRoomSettings(conn, wsMsg.Payload)
+	case "get_room_members":
+		slog.Info("👥 Routing to handleGetRoomMembers", "connID", conn.ID)
+		h.handleGetRoomMembers(conn, wsMsg.Payload)
+	case "update_member_role":
+		slog.Info("👤 Routing to handleUpdateMemberRole", "connID", conn.ID)
+		h.handleUpdateMemberRole(conn, wsMsg.Payload)
+	case "remove_member":
+		slog.Info("👤 Routing to handleRemoveMember", "connID", conn.ID)
+		h.handleRemoveMember(conn, wsMsg.Payload)
+	case "create_invitation":
+		slog.Info("📨 Routing to handleCreateInvitation", "connID", conn.ID)
+		h.handleCreateInvitation(conn, wsMsg.Payload)
+	case "accept_invitation":
+		slog.Info("📨 Routing to handleAcceptInvitation", "connID", conn.ID)
+		h.handleAcceptInvitation(conn, wsMsg.Payload)
+	case "get_invitations":
+		slog.Info("📨 Routing to handleGetInvitations", "connID", conn.ID)
+		h.handleGetInvitations(conn, wsMsg.Payload)
+	case "delete_invitation":
+		slog.Info("📨 Routing to handleDeleteInvitation", "connID", conn.ID)
+		h.handleDeleteInvitation(conn, wsMsg.Payload)
 	default:
 		slog.Warn("❓ Unknown message type", "type", wsMsg.Type, "connID", conn.ID)
 	}
@@ -432,6 +533,15 @@ func (h *Hub) handleLeaveRoom(conn *Connection, payload map[string]interface{}) 
 func (h *Hub) handleUpdateElements(conn *Connection, payload map[string]interface{}) {
 	if conn.RoomID == "" {
 		h.sendError(conn, "Not in a room", "not_in_room")
+		return
+	}
+
+	// Check edit permission (Phase 11)
+	if !h.checkEditPermission(conn) {
+		h.sendMessage(conn, "permission_denied", PermissionDeniedPayload{
+			Action:  "edit",
+			Message: "You don't have permission to edit in this room",
+		})
 		return
 	}
 

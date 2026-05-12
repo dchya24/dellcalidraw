@@ -100,6 +100,11 @@ func main() {
 	// Initialize WebSocket hub
 	hub := websocket.NewHub(roomManager, authService)
 
+	// Set database client for permission checks (Phase 11)
+	if dbClient != nil {
+		hub.SetDBClient(websocket.NewDBClientAdapter(dbClient))
+	}
+
 	// Setup router
 	r := chi.NewRouter()
 

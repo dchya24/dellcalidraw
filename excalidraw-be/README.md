@@ -250,8 +250,9 @@ GET /ws
 ### Configuration
 
 Configuration can be provided via:
-1. Environment variables (prefixed with `EXCALIDRAW_`)
-2. `config.yaml` file
+1. `.env` file (automatically loaded if present)
+2. Environment variables (prefixed with `EXCALIDRAW_`)
+3. `config.yaml` file
 
 Example `config.yaml`:
 ```yaml

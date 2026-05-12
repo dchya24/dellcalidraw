@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
@@ -91,11 +93,15 @@ func Load(configPath string) (*Config, error) {
 }
 
 func LoadFromEnv() (*Config, error) {
-	setDefaults()
+	// Load .env file if it exists
+	if _, err := os.Stat(".env"); err == nil {
+		if err := godotenv.Load(); err != nil {
+			return nil, fmt.Errorf("failed to load .env file: %w", err)
+		}
+	}
 
-	// Override with environment variables
-	viper.AutomaticEnv()
-	viper.SetEnvPrefix("EXCALIDRAW")
+	setDefaults()
+	bindEnvVars()
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
@@ -103,6 +109,54 @@ func LoadFromEnv() (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+func bindEnvVars() {
+	// Server
+	_ = viper.BindEnv("server.port", "EXCALIDRAW_SERVER_PORT")
+	_ = viper.BindEnv("server.read_timeout", "EXCALIDRAW_SERVER_READ_TIMEOUT")
+	_ = viper.BindEnv("server.write_timeout", "EXCALIDRAW_SERVER_WRITE_TIMEOUT")
+	_ = viper.BindEnv("server.idle_timeout", "EXCALIDRAW_SERVER_IDLE_TIMEOUT")
+
+	// WebSocket
+	_ = viper.BindEnv("websocket.read_buffer_size", "EXCALIDRAW_WEBSOCKET_READ_BUFFER_SIZE")
+	_ = viper.BindEnv("websocket.write_buffer_size", "EXCALIDRAW_WEBSOCKET_WRITE_BUFFER_SIZE")
+	_ = viper.BindEnv("websocket.ping_period", "EXCALIDRAW_WEBSOCKET_PING_PERIOD")
+	_ = viper.BindEnv("websocket.pong_wait", "EXCALIDRAW_WEBSOCKET_PONG_WAIT")
+
+	// Room
+	_ = viper.BindEnv("room.capacity", "EXCALIDRAW_ROOM_CAPACITY")
+	_ = viper.BindEnv("room.inactivity_timeout", "EXCALIDRAW_ROOM_INACTIVITY_TIMEOUT")
+	_ = viper.BindEnv("room.cleanup_interval", "EXCALIDRAW_ROOM_CLEANUP_INTERVAL")
+
+	// Database
+	_ = viper.BindEnv("database.host", "EXCALIDRAW_DATABASE_HOST")
+	_ = viper.BindEnv("database.port", "EXCALIDRAW_DATABASE_PORT")
+	_ = viper.BindEnv("database.user", "EXCALIDRAW_DATABASE_USER")
+	_ = viper.BindEnv("database.password", "EXCALIDRAW_DATABASE_PASSWORD")
+	_ = viper.BindEnv("database.dbname", "EXCALIDRAW_DATABASE_DBNAME")
+	_ = viper.BindEnv("database.sslmode", "EXCALIDRAW_DATABASE_SSLMODE")
+	_ = viper.BindEnv("database.max_open_conns", "EXCALIDRAW_DATABASE_MAX_OPEN_CONNS")
+	_ = viper.BindEnv("database.max_idle_conns", "EXCALIDRAW_DATABASE_MAX_IDLE_CONNS")
+	_ = viper.BindEnv("database.conn_max_lifetime", "EXCALIDRAW_DATABASE_CONN_MAX_LIFETIME")
+
+	// Storage
+	_ = viper.BindEnv("storage.endpoint", "EXCALIDRAW_STORAGE_ENDPOINT")
+	_ = viper.BindEnv("storage.access_key", "EXCALIDRAW_STORAGE_ACCESS_KEY")
+	_ = viper.BindEnv("storage.secret_key", "EXCALIDRAW_STORAGE_SECRET_KEY")
+	_ = viper.BindEnv("storage.bucket", "EXCALIDRAW_STORAGE_BUCKET")
+	_ = viper.BindEnv("storage.region", "EXCALIDRAW_STORAGE_REGION")
+	_ = viper.BindEnv("storage.use_ssl", "EXCALIDRAW_STORAGE_USE_SSL")
+	_ = viper.BindEnv("storage.public", "EXCALIDRAW_STORAGE_PUBLIC")
+
+	// Auth
+	_ = viper.BindEnv("auth.secret_key", "EXCALIDRAW_AUTH_SECRET_KEY")
+	_ = viper.BindEnv("auth.access_token_ttl", "EXCALIDRAW_AUTH_ACCESS_TOKEN_TTL")
+	_ = viper.BindEnv("auth.refresh_token_ttl", "EXCALIDRAW_AUTH_REFRESH_TOKEN_TTL")
+
+	// Log
+	_ = viper.BindEnv("log.level", "EXCALIDRAW_LOG_LEVEL")
+	_ = viper.BindEnv("log.format", "EXCALIDRAW_LOG_FORMAT")
 }
 
 func setDefaults() {

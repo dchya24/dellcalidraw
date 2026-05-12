@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import debounce from "lodash.debounce";
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { Excalidraw, MainMenu } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import type {
   AppState,
@@ -23,6 +23,7 @@ import RemoteCursors from "./RemoteCursors";
 import FloatingTab from "./FloatingTab";
 import RoomInviteDialog from "./RoomInviteDialog";
 import ConflictResolutionPanel from "./ConflictResolutionPanel";
+import { LogIn, LogOut } from "lucide-react";
 
 interface WhiteboardProps {
   username: string;
@@ -31,7 +32,12 @@ interface WhiteboardProps {
   onLogout: () => void;
 }
 
-export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLogout }: WhiteboardProps) {
+export default function Whiteboard({
+  username,
+  isAuthenticated,
+  onOpenAuth,
+  onLogout,
+}: WhiteboardProps) {
   const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const applyingRemoteChangesRef = useRef(false); // Track when applying remote changes to prevent loops
   const isApplyingChangesRef = useRef(false); // Additional lock to prevent race conditions
@@ -43,15 +49,17 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
   const [floatingTabOpen, setFloatingTabOpen] = useState(false);
-  const [conflicts, setConflicts] = useState<Array<{
-    id: string;
-    userId: string;
-    username: string;
-    color: string;
-    timestamp: number;
-    description: string;
-    elementCount: number;
-  }>>([]);
+  const [conflicts, setConflicts] = useState<
+    Array<{
+      id: string;
+      userId: string;
+      username: string;
+      color: string;
+      timestamp: number;
+      description: string;
+      elementCount: number;
+    }>
+  >([]);
   const {
     files,
     activeFileId,
@@ -131,12 +139,9 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
     [tabs, removeTab],
   );
 
-  const handleFloatingTabOpen = useCallback(
-    () => {
-      setFloatingTabOpen(!floatingTabOpen);
-    },
-    [setFloatingTabOpen, floatingTabOpen],
-  );
+  const handleFloatingTabOpen = useCallback(() => {
+    setFloatingTabOpen(!floatingTabOpen);
+  }, [setFloatingTabOpen, floatingTabOpen]);
 
   const handleDeleteConfirm = useCallback(() => {
     if (pendingDeleteId) {
@@ -249,13 +254,16 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
   // Helper function to convert backend element to Excalidraw format
   const convertBackendToExcalidraw = useCallback(
-    (backendEl: import('../types/websocket').ExcalidrawElementPayload): OrderedExcalidrawElement => {
+    (
+      backendEl: import("../types/websocket").ExcalidrawElementPayload,
+    ): OrderedExcalidrawElement => {
       // Generate required fields with defaults if missing
       const seed = backendEl.seed ?? Math.floor(Math.random() * 1000000);
       const version = backendEl.version ?? 1;
-      const versionNonce = backendEl.versionNonce ?? Math.floor(Math.random() * 1000000);
+      const versionNonce =
+        backendEl.versionNonce ?? Math.floor(Math.random() * 1000000);
       const updated = backendEl.updated ?? Date.now();
-      
+
       // Build the base element with all required properties
       const baseElement = {
         id: backendEl.id,
@@ -267,9 +275,11 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
         angle: backendEl.angle ?? 0,
         strokeColor: backendEl.strokeColor ?? "#000000",
         backgroundColor: backendEl.backgroundColor ?? "transparent",
-        fillStyle: (backendEl.fillStyle ?? "solid") as OrderedExcalidrawElement["fillStyle"],
+        fillStyle: (backendEl.fillStyle ??
+          "solid") as OrderedExcalidrawElement["fillStyle"],
         strokeWidth: backendEl.strokeWidth ?? 1,
-        strokeStyle: (backendEl.strokeStyle ?? "solid") as OrderedExcalidrawElement["strokeStyle"],
+        strokeStyle: (backendEl.strokeStyle ??
+          "solid") as OrderedExcalidrawElement["strokeStyle"],
         roughness: backendEl.roughness ?? 1,
         opacity: backendEl.opacity ?? 100,
         seed,
@@ -315,12 +325,12 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
       Object.entries(activeTab.data.files || {}).forEach(([key, value]) => {
         if (
-          typeof value === 'object' &&
+          typeof value === "object" &&
           value !== null &&
-          'mimeType' in value &&
-          'id' in value &&
-          'dataURL' in value &&
-          'created' in value
+          "mimeType" in value &&
+          "id" in value &&
+          "dataURL" in value &&
+          "created" in value
         ) {
           const fileValue = value as Record<string, unknown>;
           const mimeType = String(fileValue.mimeType);
@@ -375,11 +385,11 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
     // Auto-join if room is in URL query parameter
     const urlParams = new URLSearchParams(window.location.search);
-    const urlRoomId = urlParams.get('room');
+    const urlRoomId = urlParams.get("room");
     if (urlRoomId && urlRoomId === roomId) {
-      console.log('🔗 Auto-joining room from URL:', roomId);
+      console.log("🔗 Auto-joining room from URL:", roomId);
       roomService.joinRoom(roomId, username).catch((error) => {
-        console.error('❌ Failed to auto-join room:', error);
+        console.error("❌ Failed to auto-join room:", error);
       });
     }
 
@@ -506,7 +516,7 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
       // Get participant info for conflict tracking
       const participants = roomService.getParticipants();
-      const participant = participants.find(p => p.id === payload.userId);
+      const participant = participants.find((p) => p.id === payload.userId);
       const username = participant?.username || "Unknown";
       const color = participant?.color || "#888888";
 
@@ -518,17 +528,21 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
       // Show conflict warning toast
       if (payload.userId) {
-        setConflictWarning(`${username} just made changes (${totalChanged} elements)`);
+        setConflictWarning(
+          `${username} just made changes (${totalChanged} elements)`,
+        );
         setTimeout(() => setConflictWarning(null), 3000);
 
         // Add to conflicts list
         const conflictId = `${payload.userId}-${Date.now()}`;
         const changeDescriptions: string[] = [];
         if (addedCount > 0) changeDescriptions.push(`added ${addedCount}`);
-        if (updatedCount > 0) changeDescriptions.push(`updated ${updatedCount}`);
-        if (deletedCount > 0) changeDescriptions.push(`deleted ${deletedCount}`);
+        if (updatedCount > 0)
+          changeDescriptions.push(`updated ${updatedCount}`);
+        if (deletedCount > 0)
+          changeDescriptions.push(`deleted ${deletedCount}`);
 
-        setConflicts(prev => {
+        setConflicts((prev) => {
           // Keep only last 10 conflicts to prevent UI overflow
           const newConflicts = [
             {
@@ -692,15 +706,15 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
   // Track mouse position for cursor sync
   useEffect(() => {
-    const container = document.querySelector('.excalidraw-container');
+    const container = document.querySelector(".excalidraw-container");
     if (!container) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       mousePositionRef.current = { x: e.clientX, y: e.clientY };
     };
 
-    container.addEventListener('mousemove', handleMouseMove);
-    return () => container.removeEventListener('mousemove', handleMouseMove);
+    container.addEventListener("mousemove", handleMouseMove);
+    return () => container.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
   useEffect(() => {
@@ -710,12 +724,16 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
     cursorService.startTracking(() => {
       const appState = excalidrawAPI.getAppState();
       const zoom = appState.zoom?.value || 1;
-      
+
       // Transform screen coordinates to canvas coordinates
       // This is what we send to other users
-      const canvasX = (mousePositionRef.current.x - appState.offsetLeft - appState.scrollX) / zoom;
-      const canvasY = (mousePositionRef.current.y - appState.offsetTop - appState.scrollY) / zoom;
-      
+      const canvasX =
+        (mousePositionRef.current.x - appState.offsetLeft - appState.scrollX) /
+        zoom;
+      const canvasY =
+        (mousePositionRef.current.y - appState.offsetTop - appState.scrollY) /
+        zoom;
+
       return {
         x: canvasX,
         y: canvasY,
@@ -739,8 +757,8 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
       const idsArray = Array.isArray(selectedElementIds)
         ? selectedElementIds
         : selectedElementIds
-        ? Object.keys(selectedElementIds)
-        : [];
+          ? Object.keys(selectedElementIds)
+          : [];
       selectionService.updateSelection(idsArray);
     }, 200); // Check every 200ms
 
@@ -775,16 +793,14 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
           onLogout={onLogout}
         />
 
-        {
-          floatingTabOpen && (
-            <FloatingTab
-              tabs={tabs}
-              activeTabId={activeTabId}
-              onTabChange={handleTabChange}
-              onDeleteRequest={handleDeleteRequest}
-            />
-          )
-        }
+        {floatingTabOpen && (
+          <FloatingTab
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onTabChange={handleTabChange}
+            onDeleteRequest={handleDeleteRequest}
+          />
+        )}
 
         {/* Sync Status Indicator */}
         {conflictWarning && (
@@ -811,19 +827,46 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
           excalidrawAPI={handleAPIReady}
           onChange={handleChange}
           initialData={getInitialData()}
-        />
+        >
+          <MainMenu>
+            <MainMenu.Group>
+              <MainMenu.DefaultItems.LoadScene />
+              <MainMenu.DefaultItems.Export />
+              <MainMenu.DefaultItems.SaveAsImage />
+              <MainMenu.DefaultItems.SearchMenu />
+            </MainMenu.Group>
+            <MainMenu.Group>
+              <MainMenu.DefaultItems.ToggleTheme />
+              {isAuthenticated ? (
+                <MainMenu.Item
+                  icon={<LogOut size={16} />}
+                  onClick={onLogout}
+                >
+                  Sign Out
+                </MainMenu.Item>
+              ) : (
+                <MainMenu.Item
+                  icon={<LogIn size={16} />}
+                  onClick={onOpenAuth}
+                >
+                  Sign In
+                </MainMenu.Item>
+              )}
+            </MainMenu.Group>
+          </MainMenu>
+        </Excalidraw>
         <RemoteCursors excalidrawAPI={excalidrawAPI} />
-
         {/* Conflict Resolution Panel */}
         <ConflictResolutionPanel
           conflicts={conflicts}
-          onDismiss={(id) => setConflicts(prev => prev.filter(c => c.id !== id))}
+          onDismiss={(id) =>
+            setConflicts((prev) => prev.filter((c) => c.id !== id))
+          }
           onDismissAll={() => setConflicts([])}
         />
 
         {/* Room Invite Dialog */}
         <RoomInviteDialog username={username} />
-
       </div>
       <TabBar
         onTabChange={handleTabChange}

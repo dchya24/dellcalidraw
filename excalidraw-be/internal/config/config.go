@@ -17,6 +17,7 @@ type Config struct {
 	Storage   StorageConfig   `mapstructure:"storage"`
 	Auth      AuthConfig      `mapstructure:"auth"`
 	Log       LogConfig       `mapstructure:"log"`
+	CORS      CORSConfig      `mapstructure:"cors"`
 }
 
 type ServerConfig struct {
@@ -70,6 +71,14 @@ type AuthConfig struct {
 type LogConfig struct {
 	Level  string `mapstructure:"level"`
 	Format string `mapstructure:"format"`
+}
+
+type CORSConfig struct {
+	AllowedOrigins   []string `mapstructure:"allowed_origins"`
+	AllowedMethods   []string `mapstructure:"allowed_methods"`
+	AllowedHeaders   []string `mapstructure:"allowed_headers"`
+	AllowCredentials bool     `mapstructure:"allow_credentials"`
+	MaxAge           int      `mapstructure:"max_age"`
 }
 
 func Load(configPath string) (*Config, error) {
@@ -157,6 +166,13 @@ func bindEnvVars() {
 	// Log
 	_ = viper.BindEnv("log.level", "EXCALIDRAW_LOG_LEVEL")
 	_ = viper.BindEnv("log.format", "EXCALIDRAW_LOG_FORMAT")
+
+	// CORS
+	_ = viper.BindEnv("cors.allowed_origins", "EXCALIDRAW_CORS_ALLOWED_ORIGINS")
+	_ = viper.BindEnv("cors.allowed_methods", "EXCALIDRAW_CORS_ALLOWED_METHODS")
+	_ = viper.BindEnv("cors.allowed_headers", "EXCALIDRAW_CORS_ALLOWED_HEADERS")
+	_ = viper.BindEnv("cors.allow_credentials", "EXCALIDRAW_CORS_ALLOW_CREDENTIALS")
+	_ = viper.BindEnv("cors.max_age", "EXCALIDRAW_CORS_MAX_AGE")
 }
 
 func setDefaults() {
@@ -205,4 +221,11 @@ func setDefaults() {
 	// Log defaults
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.format", "json")
+
+	// CORS defaults
+	viper.SetDefault("cors.allowed_origins", []string{"http://localhost:3000", "http://localhost:5173"})
+	viper.SetDefault("cors.allowed_methods", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
+	viper.SetDefault("cors.allowed_headers", []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"})
+	viper.SetDefault("cors.allow_credentials", true)
+	viper.SetDefault("cors.max_age", 300)
 }

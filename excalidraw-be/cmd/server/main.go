@@ -135,6 +135,11 @@ func main() {
 		r.Post("/api/auth/refresh", authHandler.Refresh)
 		r.Post("/api/auth/logout", authHandler.Logout)
 
+		// Password reset routes (public)
+		r.Post("/api/auth/forgot-password", authHandler.ForgotPassword)
+		r.Post("/api/auth/validate-reset-token", authHandler.ValidateResetToken)
+		r.Post("/api/auth/reset-password", authHandler.ResetPassword)
+
 		// Protected routes (require JWT)
 		r.Group(func(r chi.Router) {
 			r.Use(auth.JWTMiddleware(authService))

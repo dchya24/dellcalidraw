@@ -92,6 +92,28 @@ class ApiService {
       body: JSON.stringify({ refreshToken }),
     });
   }
+
+  // Password Reset Methods (Phase 12)
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+    return this.request("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async validateResetToken(token: string): Promise<{ valid: boolean; email: string; expiresAt: string }> {
+    return this.request("/api/auth/validate-reset-token", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    return this.request("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, newPassword }),
+    });
+  }
 }
 
 export class AuthError extends Error {

@@ -1,5 +1,153 @@
 # Whiteboard Project - Phase Summary
 
+## ✅ Phase 12: Auto-Refresh JWT Tokens & Password Reset Flow Completed
+**Date:** 2026-05-12
+
+### 🛠 Features Implemented
+
+#### 1. Database Schema (`internal/database/migrations/000005_password_reset.up.sql`)
+- `password_reset_tokens` table: UUID PK, user FK, token, expires_at, used_at
+- Indexes on token and user_id for fast lookups
+- Automatic cleanup of expired/used tokens
+
+#### 2. Password Reset Repository (`internal/database/password_reset.go`)
+- `CreatePasswordResetToken()` - Generate secure 64-char hex token with 1-hour expiry
+- `GetPasswordResetToken()` - Retrieve token by token string
+- `UsePasswordResetToken()` - Mark token as used (single-use)
+- `UpdateUserPassword()` - Update user's hashed password
+- `CleanExpiredPasswordResetTokens()` - Cleanup expired tokens
+- Automatic invalidation of existing tokens when creating new one
+
+#### 3. Password Reset HTTP Handlers (`cmd/server/auth_handlers.go`)
+- **POST `/api/auth/forgot-password`** - Initiate password reset
+  - Accepts email, creates reset token
+  - Returns success even if email not found (prevents enumeration)
+  - Logs reset URL for development (production: send email)
+- **POST `/api/auth/validate-reset-token`** - Validate reset token
+  - Returns validity, masked email, expiry time
+  - Checks if token is used or expired
+- **POST `/api/auth/reset-password`** - Complete password reset
+  - Validates token, updates password with bcrypt
+  - Marks token as used
+  - Revokes all existing refresh tokens for security
+
+#### 4. Token Refresh Service (`src/services/tokenRefreshService.ts`)
+- Automatic token refresh 2 minutes before expiry
+- Periodic check every 30 seconds
+- JWT expiry extraction from token payload
+- `start()` / `stop()` lifecycle methods
+- `forceRefresh()` for manual refresh
+- `getTimeUntilExpiry()` / `isTokenExpired()` helpers
+- Automatic auth clear on refresh failure
+
+#### 5. API Service Extensions (`src/services/api.ts`)
+- `forgotPassword(email)` - Request password reset
+- `validateResetToken(token)` - Check token validity
+- `resetPassword(token, newPassword)` - Complete reset
+
+#### 6. Forgot Password Modal (`src/components/ForgotPasswordModal.tsx`)
+- Email input with validation
+- Success state with "Check Your Email" message
+- Error handling with user-friendly messages
+- "Back to Sign In" navigation
+- Dark/light mode support
+
+#### 7. Reset Password Modal (`src/components/ResetPasswordModal.tsx`)
+- Token validation on mount with loading state
+- Invalid/expired token error display
+- New password + confirm password inputs
+- Password validation (min 8 characters, match)
+- Success state with "Sign In" redirect
+- Dark/light mode support
+
+#### 8. Auth Modal Update (`src/components/AuthModal.tsx`)
+- Added "Forgot password?" link on login form
+- `onForgotPassword` callback prop
+
+#### 9. App Integration (`src/App.tsx`)
+- Token refresh service start/stop based on auth state
+- Password reset token detection from URL
+- Modal state management for forgot/reset password
+- Navigation flow between auth modals
+
+### 🧠 Technical Decisions & Challenges
+
+**Decision 1: Token Refresh Timing**
+- Refresh 2 minutes before expiry (configurable)
+- Check every 30 seconds (balance between responsiveness and overhead)
+- Extract expiry from JWT payload (no server call needed)
+
+**Decision 2: Password Reset Security**
+- 64-character hex tokens (32 bytes random)
+- 1-hour expiration (short window for security)
+- Single-use tokens (marked as used after reset)
+- Revoke all refresh tokens after password change
+- Don't reveal if email exists (prevent enumeration)
+
+**Decision 3: Masked Email Display**
+- Show `j***@example.com` format on reset page
+- Confirms correct account without full exposure
+
+**Decision 4: Graceful Token Refresh Failure**
+- If refresh fails with "invalid" error, clear auth
+- User redirected to login naturally
+- No jarring error messages
+
+### 📊 Comparison: Before vs After
+
+| Feature | Before (Phase 11) | After (Phase 12) |
+|---------|-------------------|-------------------|
+| Token Refresh | ❌ Manual only | ✅ Auto 2min before expiry |
+| Refresh Check | ❌ None | ✅ Every 30 seconds |
+| Forgot Password | ❌ None | ✅ Email-based flow |
+| Reset Token | ❌ None | ✅ 1-hour secure token |
+| Password Update | ❌ None | ✅ With token validation |
+| Token Revocation | ❌ None | ✅ On password reset |
+| Email Masking | ❌ N/A | ✅ j***@example.com |
+
+### 📁 Files Created
+
+**Backend (Go):**
+- `excalidraw-be/internal/database/migrations/000005_password_reset.up.sql`
+- `excalidraw-be/internal/database/migrations/000005_password_reset.down.sql`
+- `excalidraw-be/internal/database/password_reset.go`
+
+**Frontend (React):**
+- `excalidraw-fe/src/services/tokenRefreshService.ts`
+- `excalidraw-fe/src/components/ForgotPasswordModal.tsx`
+- `excalidraw-fe/src/components/ResetPasswordModal.tsx`
+
+### 📁 Files Modified
+
+**Backend (Go):**
+- `excalidraw-be/cmd/server/auth_handlers.go` - Added password reset handlers
+- `excalidraw-be/cmd/server/main.go` - Added password reset routes
+
+**Frontend (React):**
+- `excalidraw-fe/src/services/api.ts` - Added password reset API methods
+- `excalidraw-fe/src/components/AuthModal.tsx` - Added forgot password link
+- `excalidraw-fe/src/App.tsx` - Integrated token refresh and password reset modals
+
+### ✅ Build Verification
+
+- ✅ Backend: `go build ./cmd/server` passes
+- ✅ Backend: `go vet ./...` passes
+- ✅ Backend: `go fmt ./...` passes
+- ✅ Frontend: `npm run build` passes
+- ✅ No Go compilation errors
+- ✅ No TypeScript errors
+
+### ⏭️ Next Steps
+
+- **Phase 13**: Email Service Integration (SendGrid/SES for actual emails)
+- Remember me functionality (extended token TTL)
+- Change password (while logged in)
+- Account deletion
+- Two-factor authentication (2FA)
+- Session management (view/revoke active sessions)
+
+---
+
 ## ✅ Phase 11: Advanced Room Features (Password, Roles, Permissions) Completed
 **Date:** 2026-05-12
 

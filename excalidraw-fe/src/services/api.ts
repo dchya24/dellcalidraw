@@ -114,6 +114,31 @@ class ApiService {
       body: JSON.stringify({ token, newPassword }),
     });
   }
+
+  // Canvas Save/Load Methods
+  async saveCanvas(roomId: string): Promise<{ success: boolean; message: string; count: number }> {
+    return this.request(`/api/rooms/${roomId}/canvas/save`, {
+      method: "POST",
+    });
+  }
+
+  async loadCanvas(roomId: string): Promise<{ success: boolean; elements: unknown[]; count: number }> {
+    return this.request(`/api/rooms/${roomId}/canvas/load`, {
+      method: "GET",
+    });
+  }
+
+  async restoreCanvas(roomId: string): Promise<{ success: boolean; message: string; count: number }> {
+    return this.request(`/api/rooms/${roomId}/canvas/restore`, {
+      method: "POST",
+    });
+  }
+
+  async clearCanvas(roomId: string): Promise<{ success: boolean; message: string; count: number }> {
+    return this.request(`/api/rooms/${roomId}/canvas`, {
+      method: "DELETE",
+    });
+  }
 }
 
 export class AuthError extends Error {

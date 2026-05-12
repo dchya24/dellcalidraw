@@ -169,6 +169,15 @@ func main() {
 		r.Get("/api/rooms/{roomId}/files", fileHandler.ListFiles)
 	}
 
+	// Canvas save/load routes (manual persistence)
+	if dbClient != nil {
+		canvasHandler := NewCanvasHandler(dbClient, roomManager)
+		r.Post("/api/rooms/{roomId}/canvas/save", canvasHandler.SaveCanvas)
+		r.Get("/api/rooms/{roomId}/canvas/load", canvasHandler.LoadCanvas)
+		r.Post("/api/rooms/{roomId}/canvas/restore", canvasHandler.RestoreCanvas)
+		r.Delete("/api/rooms/{roomId}/canvas", canvasHandler.ClearCanvas)
+	}
+
 	// Start server
 	server := &http.Server{
 		Addr:         ":" + cfg.Server.Port,

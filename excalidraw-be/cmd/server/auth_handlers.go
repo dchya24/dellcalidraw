@@ -66,7 +66,7 @@ func userProfileFromDB(u *database.User) UserProfile {
 		ID:        u.ID,
 		Username:  u.Username,
 		Email:     u.Email,
-		AvatarURL: u.AvatarURL,
+		AvatarURL: u.GetAvatarURL(),
 		CreatedAt: u.CreatedAt,
 	}
 }
@@ -362,7 +362,7 @@ func (ah *AuthHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"id":        user.ID,
 		"username":  user.Username,
-		"avatarUrl": user.AvatarURL,
+		"avatarUrl": user.GetAvatarURL(),
 	})
 }
 

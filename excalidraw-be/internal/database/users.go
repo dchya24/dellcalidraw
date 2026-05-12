@@ -12,9 +12,17 @@ type User struct {
 	Username  string
 	Email     string
 	Password  string
-	AvatarURL string
+	AvatarURL sql.NullString
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// GetAvatarURL returns the avatar URL or empty string if NULL
+func (u *User) GetAvatarURL() string {
+	if u.AvatarURL.Valid {
+		return u.AvatarURL.String
+	}
+	return ""
 }
 
 type RefreshToken struct {
@@ -87,11 +95,18 @@ func (p *PostgresClient) GetUserByID(id string) (*User, error) {
 
 func (p *PostgresClient) UpdateUserProfile(id, username, avatarURL string) (*User, error) {
 	var user User
+	// Convert empty string to NULL for avatar_url
+	var avatarParam interface{}
+	if avatarURL == "" {
+		avatarParam = nil
+	} else {
+		avatarParam = avatarURL
+	}
 	err := p.db.QueryRow(
 		`UPDATE users SET username = $1, avatar_url = $2, updated_at = NOW()
 		 WHERE id = $3
 		 RETURNING id, username, email, password, avatar_url, created_at, updated_at`,
-		username, avatarURL, id,
+		username, avatarParam, id,
 	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update user profile: %w", err)

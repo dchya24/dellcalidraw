@@ -1,11 +1,80 @@
 # Whiteboard Project - Pending Development Summary
 
-**Last Updated:** 2026-03-30
-**Status:** ✅ Phase 7 Complete - All core collaboration features implemented
+**Last Updated:** 2026-05-12
+**Status:** ✅ Phase 12 Complete - Auto-refresh JWT tokens & Password reset flow
 
 ---
 
-## ✅ Recently Completed (Phase 7)
+## 🎯 Nice to Have Features (Future Enhancements)
+
+### Authentication & Security
+- [ ] **Email Service Integration** - SendGrid/AWS SES for actual password reset emails
+- [ ] **Remember Me** - Extended token TTL option on login
+- [ ] **Change Password** - Update password while logged in
+- [ ] **Two-Factor Authentication (2FA)** - TOTP/SMS verification
+- [ ] **Session Management** - View and revoke active sessions
+- [ ] **Account Deletion** - Self-service account removal
+- [ ] **OAuth/Social Login** - Google, GitHub, Microsoft login options
+- [ ] **Email Verification** - Verify email on registration
+
+### Room & Collaboration
+- [ ] **Room Templates** - Pre-built canvas templates (flowchart, wireframe, etc.)
+- [ ] **Room Presets** - Save and load room configurations
+- [ ] **Email Notifications for Invitations** - Send invite links via email
+- [ ] **Room Deletion with Confirmation** - Owner can delete room
+- [ ] **Transfer Ownership** - Transfer room ownership to another user
+- [ ] **Audit Log** - Track room actions (who joined, edited, etc.)
+- [ ] **Room Expiration** - Auto-delete inactive rooms after X days
+- [ ] **Room Cloning** - Duplicate a room with all elements
+
+### UI/UX Enhancements
+- [ ] **User Avatars** - Profile pictures in participant list
+- [ ] **Typing/Drawing Indicators** - Show when users are actively drawing
+- [ ] **Toast Notifications** - Join/leave notifications
+- [ ] **Keyboard Shortcut Hints** - Tooltips showing shortcuts
+- [ ] **Undo/Redo for Remote Changes** - Revert specific remote edits
+- [ ] **Follow User Mode** - Viewport follows another user's cursor
+- [ ] **Comments/Annotations** - Add comments to specific elements
+- [ ] **Chat Panel** - In-room text chat
+
+### Performance & Scale
+- [ ] **Performance Optimization** - Handle 1000+ elements smoothly
+- [ ] **Element Pagination** - Load elements in chunks for large canvases
+- [ ] **WebSocket Compression** - Reduce bandwidth usage
+- [ ] **CDN for Static Assets** - Faster asset loading
+- [ ] **Horizontal Scaling** - Multi-server WebSocket support with Redis
+
+### Export & Integration
+- [ ] **PDF Export** - Export canvas as PDF
+- [ ] **Embed Mode** - Embed whiteboard in other websites
+- [ ] **API Access** - REST API for programmatic access
+- [ ] **Webhooks** - Notify external services on events
+- [ ] **Slack/Teams Integration** - Share rooms in chat apps
+
+---
+
+## ✅ Recently Completed
+
+### Phase 12: Auto-Refresh JWT & Password Reset (2026-05-12)
+- Token refresh service (auto-refresh 2min before expiry)
+- Password reset flow (forgot password, reset with token)
+- ForgotPasswordModal and ResetPasswordModal components
+
+### Phase 11: Advanced Room Features (2026-05-12)
+- Room password protection
+- User roles (Owner/Editor/Viewer)
+- Permission-based access control
+- Member management
+- Invitation system with tokens
+
+### Phase 10/10.1: User Authentication (2026-04-21 / 2026-05-05)
+- JWT authentication with refresh tokens
+- Login/Register UI
+- WebSocket token authentication
+
+---
+
+## ✅ Previously Completed (Phase 7)
 
 ### Element Sync Integration ✅
 **Status:** FIXED - Full element serialization implemented

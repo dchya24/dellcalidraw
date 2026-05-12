@@ -798,7 +798,7 @@ export default function Whiteboard({
   // Handle password submit
   const handlePasswordSubmit = useCallback((password: string) => {
     if (!pendingPasswordRoomId) return;
-    
+
     console.log("🔑 Submitting password for room:", pendingPasswordRoomId);
     roomPermissionsService.joinRoomWithPassword(pendingPasswordRoomId, username, password);
     setPasswordDialogOpen(false);
@@ -838,8 +838,6 @@ export default function Whiteboard({
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           username={username}
           isAuthenticated={isAuthenticated}
-          onOpenAuth={onOpenAuth}
-          onLogout={onLogout}
           onOpenRoomSettings={handleOpenRoomSettings}
         />
 

@@ -53,6 +53,7 @@ export default function Whiteboard({
   const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const applyingRemoteChangesRef = useRef(false); // Track when applying remote changes to prevent loops
   const isApplyingChangesRef = useRef(false); // Additional lock to prevent race conditions
+  const mainMenuFileInputRef = useRef<HTMLInputElement>(null);
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -886,7 +887,6 @@ export default function Whiteboard({
   };
 
   // File input ref for MainMenu import
-  const mainMenuFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleMainMenuImport = () => {
     mainMenuFileInputRef.current?.click();

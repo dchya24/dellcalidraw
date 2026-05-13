@@ -16,6 +16,7 @@ type Config struct {
 	Database  DatabaseConfig  `mapstructure:"database"`
 	Storage   StorageConfig   `mapstructure:"storage"`
 	Auth      AuthConfig      `mapstructure:"auth"`
+	AI        AIConfig        `mapstructure:"ai"`
 	Log       LogConfig       `mapstructure:"log"`
 	CORS      CORSConfig      `mapstructure:"cors"`
 }
@@ -66,6 +67,15 @@ type AuthConfig struct {
 	SecretKey       string        `mapstructure:"secret_key"`
 	AccessTokenTTL  time.Duration `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL time.Duration `mapstructure:"refresh_token_ttl"`
+}
+
+type AIConfig struct {
+	Provider    string  `mapstructure:"provider"`    // openai | anthropic
+	APIKey      string  `mapstructure:"api_key"`
+	BaseURL     string  `mapstructure:"base_url"`    // For OpenAI-compatible endpoints
+	Model       string  `mapstructure:"model"`
+	MaxTokens   int     `mapstructure:"max_tokens"`
+	Temperature float64 `mapstructure:"temperature"`
 }
 
 type LogConfig struct {
@@ -163,6 +173,14 @@ func bindEnvVars() {
 	_ = viper.BindEnv("auth.access_token_ttl", "EXCALIDRAW_AUTH_ACCESS_TOKEN_TTL")
 	_ = viper.BindEnv("auth.refresh_token_ttl", "EXCALIDRAW_AUTH_REFRESH_TOKEN_TTL")
 
+	// AI
+	_ = viper.BindEnv("ai.provider", "EXCALIDRAW_AI_PROVIDER")
+	_ = viper.BindEnv("ai.api_key", "EXCALIDRAW_AI_API_KEY")
+	_ = viper.BindEnv("ai.base_url", "EXCALIDRAW_AI_BASE_URL")
+	_ = viper.BindEnv("ai.model", "EXCALIDRAW_AI_MODEL")
+	_ = viper.BindEnv("ai.max_tokens", "EXCALIDRAW_AI_MAX_TOKENS")
+	_ = viper.BindEnv("ai.temperature", "EXCALIDRAW_AI_TEMPERATURE")
+
 	// Log
 	_ = viper.BindEnv("log.level", "EXCALIDRAW_LOG_LEVEL")
 	_ = viper.BindEnv("log.format", "EXCALIDRAW_LOG_FORMAT")
@@ -217,6 +235,14 @@ func setDefaults() {
 	viper.SetDefault("auth.secret_key", "change-me-in-production-please")
 	viper.SetDefault("auth.access_token_ttl", 15*time.Minute)
 	viper.SetDefault("auth.refresh_token_ttl", 7*24*time.Hour)
+
+	// AI defaults
+	viper.SetDefault("ai.provider", "openai")
+	viper.SetDefault("ai.api_key", "")
+	viper.SetDefault("ai.base_url", "")
+	viper.SetDefault("ai.model", "gpt-4o")
+	viper.SetDefault("ai.max_tokens", 4096)
+	viper.SetDefault("ai.temperature", 0.7)
 
 	// Log defaults
 	viper.SetDefault("log.level", "info")

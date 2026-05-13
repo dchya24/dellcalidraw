@@ -283,20 +283,14 @@ src/
 ```
 excalidraw-be/
 ├── cmd/server/
-│   └── ai_handlers.go          # HTTP handlers for /api/ai/*
+│   └── main.go               # AI handler initialization (✅ implemented)
 ├── internal/
 │   ├── ai/
-│   │   ├── provider.go         # LLM provider interface
-│   │   ├── openai.go           # OpenAI implementation
-│   │   ├── anthropic.go        # Anthropic implementation
-│   │   ├── tools.go            # MCP tool definitions
-│   │   └── stream.go           # SSE streaming logic
-│   └── mcp/
-│       ├── server.go           # MCP server implementation
-│       ├── tools_draw.go       # Drawing tools
-│       ├── tools_layout.go     # Layout tools
-│       ├── tools_modify.go     # Modify/delete tools
-│       └── tools_context.go    # Canvas context tools
+│   │   ├── provider.go       # LLM provider interface + tools (✅ implemented)
+│   │   ├── openai.go        # OpenAI implementation + SSE streaming (✅ implemented)
+│   │   └── handler.go       # HTTP handlers for /api/ai/* (✅ implemented)
+│   └── config/
+│       └── config.go         # AI config (✅ implemented)
 ```
 
 ---
@@ -379,9 +373,9 @@ Ini powerful karena:
 ### Phase 1: Basic Chat + Simple Generation (MVP) ✅
 - [x] Chat panel UI (FE) — `src/components/ai/AIChatPanel.tsx`
 - [x] AI service + SSE client (FE) — `src/services/ai/aiService.ts`
-- [ ] Backend proxy endpoint (`/api/ai/chat`) — **PENDING (BE)**
-- [ ] OpenAI provider implementation — **PENDING (BE)**
-- [x] Basic tools: `create_rectangle`, `create_text`, `create_arrow` — tools defined in AIChatPanel.tsx
+- [x] Backend proxy endpoint (`/api/ai/chat`) — `excalidraw-be/internal/ai/handler.go`
+- [x] OpenAI provider implementation — `excalidraw-be/internal/ai/openai.go`
+- [x] Basic tools: `create_rectangle`, `create_text`, `create_arrow` — tools defined in provider.go
 - [x] Canvas context in request — sent via canvasContext param
 
 ### Phase 2: Full Tool Set + Streaming
@@ -411,16 +405,12 @@ Ini powerful karena:
 
 ```env
 # Backend (.env)
-AI_PROVIDER=openai              # openai | anthropic
-AI_API_KEY=sk-...               # Provider API key
-AI_MODEL=gpt-4o                 # Default model
-AI_BASE_URL=                    # Custom endpoint (optional, for OpenAI compatible)
-AI_MAX_TOKENS=4096
-AI_TEMPERATURE=0.7
-
-# Optional: Anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-sonnet-4-20250514
+EXCALIDRAW_AI_PROVIDER=openai              # openai | anthropic
+EXCALIDRAW_AI_API_KEY=sk-...             # Provider API key
+EXCALIDRAW_AI_BASE_URL=                   # Custom endpoint (optional, for OpenAI compatible)
+EXCALIDRAW_AI_MODEL=gpt-4o                # Default model
+EXCALIDRAW_AI_MAX_TOKENS=4096
+EXCALIDRAW_AI_TEMPERATURE=0.7
 ```
 
 ---

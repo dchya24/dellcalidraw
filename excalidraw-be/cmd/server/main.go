@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/you/excalidraw-be/internal/auth"
+	"github.com/you/excalidraw-be/internal/ai"
 	"github.com/you/excalidraw-be/internal/config"
 	"github.com/you/excalidraw-be/internal/database"
 	appmiddleware "github.com/you/excalidraw-be/internal/middleware"
@@ -106,6 +107,19 @@ func main() {
 		hub.SetDBClient(websocket.NewDBClientAdapter(dbClient))
 	}
 
+	// Initialize AI provider
+	var aiHandler *ai.Handler
+	if cfg.AI.APIKey != "" {
+		openaiProvider := ai.NewOpenAIProvider(
+			cfg.AI.APIKey,
+			cfg.AI.BaseURL,
+			cfg.AI.Model,
+			cfg.AI.MaxTokens,
+			cfg.AI.Temperature,
+		)
+		aiHandler = ai.NewHandler(openaiProvider)
+	}
+
 	// Setup router
 	r := chi.NewRouter()
 
@@ -182,6 +196,11 @@ func main() {
 		r.Delete("/api/rooms/{roomId}/canvas", canvasHandler.ClearCanvas)
 	}
 
+	// AI routes (optional, only if configured)
+	if aiHandler != nil {
+		aiHandler.RegisterRoutes(r)
+	}
+
 	// Start server
 	server := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
@@ -198,6 +217,7 @@ func main() {
 			zap.Bool("persistence", roomManager.HasPersistence()),
 			zap.Bool("file_storage", storageClient != nil),
 			zap.Bool("auth", dbClient != nil),
+			zap.Bool("ai", aiHandler != nil),
 		)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("Server failed", zap.Error(err))

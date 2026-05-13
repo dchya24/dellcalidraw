@@ -17,6 +17,11 @@ import { cursorService } from "../services/cursorService";
 import { selectionService } from "../services/selectionService";
 import { roomPermissionsService } from "../services/roomPermissionsService";
 import { apiService } from "../services/api";
+import {
+  exportFileAllSheets,
+  importDellcalidrawAsNewFile,
+  parseImportData,
+} from "../services/exportImportService";
 import TabBar from "./TabBar";
 import Toolbar from "./Toolbar";
 import ConfirmDialog from "./ConfirmDialog";
@@ -27,7 +32,7 @@ import RoomInviteDialog from "./RoomInviteDialog";
 import ConflictResolutionPanel from "./ConflictResolutionPanel";
 import RoomSettingsPanel from "./RoomSettingsPanel";
 import RoomPasswordDialog from "./RoomPasswordDialog";
-import { LogIn, LogOut, Save } from "lucide-react";
+import { HardDriveDownload, LogIn, LogOut, Moon, Save, Sun } from "lucide-react";
 
 interface WhiteboardProps {
   username: string;
@@ -623,6 +628,7 @@ export default function Whiteboard({
 
   const handleAddTab = useCallback(() => {
     const api = excalidrawAPIRef.current;
+    console.log('api', api)
     if (!api) return;
 
     const elements = api.getSceneElements();
@@ -631,7 +637,6 @@ export default function Whiteboard({
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { collaborators, ...safeAppState } = appState;
     saveTabState(activeTabId, elements, safeAppState, files);
-
     addTab();
 
     api.updateScene({ elements: [] });
@@ -648,6 +653,7 @@ export default function Whiteboard({
       const jsonFile = files.find(
         (f) =>
           f.name.endsWith(".excalidraw") ||
+          f.name.endsWith(".dellcalidraw") ||
           f.name.endsWith(".json") ||
           f.type === "application/json",
       );
@@ -655,14 +661,20 @@ export default function Whiteboard({
       if (jsonFile) {
         try {
           const text = await jsonFile.text();
-          const data = JSON.parse(text);
+          const api = excalidrawAPIRef.current;
+          if (!api) return;
 
-          // Handle both single tab and multi-file formats
-          if (data.type === "excalidraw" && data.elements) {
-            // Single tab format (native Excalidraw)
-            const api = excalidrawAPIRef.current;
-            if (api) {
-              // Save current state first
+          const result = parseImportData(text);
+
+          switch (result.format) {
+            case "dellcalidraw":
+              // Multi-sheet: import as new file
+              await importDellcalidrawAsNewFile(result.data, api);
+              break;
+
+            case "excalidraw":
+            case "elements": {
+              // Single scene: save current state, create new tab, load there
               const currentElements = api.getSceneElements();
               const currentAppState = api.getAppState();
               const currentFiles = api.getFiles();
@@ -675,22 +687,21 @@ export default function Whiteboard({
                 currentFiles,
               );
 
-              // Create new tab with imported data
               addTab();
 
+              const elements = result.format === "excalidraw"
+                ? (result.data.elements || [])
+                : result.data;
               api.updateScene({
-                elements: data.elements || [],
-                appState: data.appState || {},
+                elements: elements as Parameters<typeof api.updateScene>[0]["elements"],
               });
               api.history.clear();
+              break;
             }
-          } else if (data.tabs && Array.isArray(data.tabs)) {
-            // Multi-tab format (our custom format)
-            const { loadFromFile } = useWhiteboardStore.getState();
-            loadFromFile({
-              tabs: data.tabs,
-              activeTabId: data.activeTabId || data.tabs[0]?.id,
-            });
+
+            case "unknown":
+              alert("Failed to import file. Unrecognized format.");
+              break;
           }
         } catch (error) {
           console.error("Failed to import file:", error);
@@ -844,6 +855,11 @@ export default function Whiteboard({
       </div>
     );
   }
+  const handleExportJSON = () => {
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+    exportFileAllSheets(api);
+  };
 
   return (
     <div
@@ -851,17 +867,19 @@ export default function Whiteboard({
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} excalidrawAPI={excalidrawAPI} />
 
       <div className="flex-1 relative z-0">
-        <Toolbar
-          excalidrawAPI={excalidrawAPI}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          username={username}
-          isAuthenticated={isAuthenticated}
-          onOpenRoomSettings={handleOpenRoomSettings}
-          onSaveToCloud={handleSaveToCloud}
-        />
+        {/*{import.meta.env.SHOW_TOOLBAR &&*/}
+          <Toolbar
+            excalidrawAPI={excalidrawAPI}
+            onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+            username={username}
+            isAuthenticated={isAuthenticated}
+            onOpenRoomSettings={handleOpenRoomSettings}
+            onSaveToCloud={handleSaveToCloud}
+          />
+        {/*}*/}
 
         {floatingTabOpen && (
           <FloatingTab
@@ -897,11 +915,17 @@ export default function Whiteboard({
           excalidrawAPI={handleAPIReady}
           onChange={handleChange}
           initialData={getInitialData()}
+          theme={theme}
         >
           <MainMenu>
             <MainMenu.Group>
               <MainMenu.DefaultItems.LoadScene />
-              <MainMenu.DefaultItems.Export />
+              <MainMenu.Item
+                icon={<HardDriveDownload size={16} />}
+                onClick={handleExportJSON}
+              >
+                Save To File
+              </MainMenu.Item>
               <MainMenu.Item
                 icon={<Save size={16} />}
                 onClick={handleSaveToCloud}
@@ -910,9 +934,14 @@ export default function Whiteboard({
               </MainMenu.Item>
               <MainMenu.DefaultItems.SaveAsImage />
               <MainMenu.DefaultItems.SearchMenu />
+              <MainMenu.Item
+                icon={theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                onClick={toggleTheme}
+              >
+                {theme === "dark" ? "Light" : "Dark"} Theme
+              </MainMenu.Item>
             </MainMenu.Group>
             <MainMenu.Group>
-              <MainMenu.DefaultItems.ToggleTheme />
               {isAuthenticated ? (
                 <MainMenu.Item
                   icon={<LogOut size={16} />}
@@ -959,11 +988,13 @@ export default function Whiteboard({
           onCancel={handlePasswordCancel}
         />
       </div>
+
       <TabBar
         onTabChange={handleTabChange}
         onAddTab={handleAddTab}
         onDeleteRequest={handleDeleteRequest}
         handleFloatingTabOpen={handleFloatingTabOpen}
+        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
       />
       <ConfirmDialog
         isOpen={deleteDialogOpen}

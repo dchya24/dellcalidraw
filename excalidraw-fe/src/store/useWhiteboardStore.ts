@@ -3,6 +3,8 @@ import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 import type { AppState } from "@excalidraw/excalidraw/types";
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import { fileService, type UserFile } from "../services/fileService";
+import { useAuthStore } from "./useAuthStore";
 
 export interface WhiteboardTab {
   id: string;
@@ -16,23 +18,29 @@ export interface WhiteboardTab {
   lastModified: number;
 }
 
-interface WhiteboardFile {
+export interface WhiteboardFile {
   id: string;
   name: string;
   tabs: WhiteboardTab[];
   activeTabId: string;
   createdAt: number;
   lastModified: number;
+  isCloud: boolean;
+  cloudId?: string;
 }
 
 interface AppStore {
   files: WhiteboardFile[];
   activeFileId: string;
+  isLoading: boolean;
+  syncStatus: "idle" | "syncing" | "synced" | "error";
+  lastSyncedAt: number | null;
 
   // File operations
-  createFile: (name?: string) => void;
-  deleteFile: (id: string) => void;
-  renameFile: (id: string, newName: string) => void;
+  createFile: (name?: string) => Promise<void>;
+  deleteFile: (id: string) => Promise<void>;
+  renameFile: (id: string, newName: string) => Promise<void>;
+  duplicateFile: (id: string) => void;
   setActiveFile: (id: string) => void;
 
   // Tab operations (within active file)
@@ -47,6 +55,10 @@ interface AppStore {
     files: Record<string, unknown>
   ) => void;
   regenerateRoomId: (tabId: string) => void;
+
+  // Cloud sync operations
+  loadFiles: () => Promise<void>;
+  syncToCloud: (file: WhiteboardFile) => Promise<void>;
 
   // Getters
   getActiveFile: () => WhiteboardFile | undefined;
@@ -84,41 +96,100 @@ const createEmptyFile = (name?: string, id?: string): WhiteboardFile => {
     activeTabId: initialTabId,
     createdAt: Date.now(),
     lastModified: Date.now(),
+    isCloud: false,
   };
 };
 
-const INITIAL_FILE_ID = nanoid();
+const INITIAL_FILE_ID = "initial-file";
+const initialFile = createEmptyFile("Untitled", INITIAL_FILE_ID);
 
 export const useWhiteboardStore = create<AppStore>()(
   persist(
     (set, get) => ({
-      files: [createEmptyFile("Untitled", INITIAL_FILE_ID)],
+      files: [initialFile],
       activeFileId: INITIAL_FILE_ID,
+      isLoading: false,
+      syncStatus: "idle" as const,
+      lastSyncedAt: null,
 
       // File operations
-      createFile: (name?: string) => {
+      createFile: async (name?: string) => {
+        const authState = useAuthStore.getState();
         const { files } = get();
-        const newFile = createEmptyFile(name || `Untitled ${files.length + 1}`);
-        set({
-          files: [...files, newFile],
-          activeFileId: newFile.id,
-        });
+        const fileName = name || `Untitled ${files.length + 1}`;
+
+        if (authState.isAuthenticated) {
+          try {
+            const response = await fileService.createFile(fileName);
+            const cloudFile: WhiteboardFile = {
+              id: response.file.id,
+              name: response.file.name,
+              tabs: [createEmptyTab("Sheet 1")],
+              activeTabId: "",
+              createdAt: new Date(response.file.createdAt).getTime(),
+              lastModified: Date.now(),
+              isCloud: true,
+              cloudId: response.file.id,
+            };
+            cloudFile.activeTabId = cloudFile.tabs[0].id;
+            set({
+              files: [...get().files, cloudFile],
+              activeFileId: cloudFile.id,
+            });
+          } catch (error) {
+            console.error("Failed to create cloud file:", error);
+            // Fallback to local
+            const newFile = createEmptyFile(fileName);
+            set({
+              files: [...get().files, newFile],
+              activeFileId: newFile.id,
+            });
+          }
+        } else {
+          const newFile = createEmptyFile(fileName);
+          set({
+            files: [...get().files, newFile],
+            activeFileId: newFile.id,
+          });
+        }
       },
 
-      deleteFile: (id: string) => {
+      deleteFile: async (id: string) => {
         const { files, activeFileId } = get();
-        if (files.length <= 1) return; // Always keep at least one file
+        if (files.length <= 1) return;
+
+        const file = files.find((f) => f.id === id);
+        if (!file) return;
+
+        const authState = useAuthStore.getState();
+        if (authState.isAuthenticated && file.isCloud && file.cloudId) {
+          try {
+            await fileService.deleteFile(file.cloudId);
+          } catch (error) {
+            console.error("Failed to delete cloud file:", error);
+          }
+        }
 
         const newFiles = files.filter((f) => f.id !== id);
-        const newActiveFileId = activeFileId === id ? newFiles[0].id : activeFileId;
+        const newActiveFileId =
+          activeFileId === id ? newFiles[0].id : activeFileId;
 
-        set({
-          files: newFiles,
-          activeFileId: newActiveFileId,
-        });
+        set({ files: newFiles, activeFileId: newActiveFileId });
       },
 
-      renameFile: (id: string, newName: string) => {
+      renameFile: async (id: string, newName: string) => {
+        const file = get().files.find((f) => f.id === id);
+        if (!file) return;
+
+        const authState = useAuthStore.getState();
+        if (authState.isAuthenticated && file.isCloud && file.cloudId) {
+          try {
+            await fileService.renameFile(file.cloudId, newName);
+          } catch (error) {
+            console.error("Failed to rename cloud file:", error);
+          }
+        }
+
         set((state) => ({
           files: state.files.map((f) =>
             f.id === id ? { ...f, name: newName, lastModified: Date.now() } : f
@@ -128,6 +199,40 @@ export const useWhiteboardStore = create<AppStore>()(
 
       setActiveFile: (id: string) => {
         set({ activeFileId: id });
+      },
+
+      duplicateFile: (id: string) => {
+        const { files } = get();
+        const file = files.find((f) => f.id === id);
+        if (!file) return;
+
+        // Deep clone tabs with new IDs
+        const newTabs = file.tabs.map((tab) => ({
+          ...tab,
+          id: nanoid(),
+          roomId: nanoid(10),
+          data: {
+            elements: [...tab.data.elements],
+            appState: { ...tab.data.appState },
+            files: { ...tab.data.files },
+          },
+          lastModified: Date.now(),
+        }));
+
+        const newFile: WhiteboardFile = {
+          id: nanoid(),
+          name: `${file.name} (copy)`,
+          tabs: newTabs,
+          activeTabId: newTabs[0].id,
+          createdAt: Date.now(),
+          lastModified: Date.now(),
+          isCloud: false,
+        };
+
+        set({
+          files: [...get().files, newFile],
+          activeFileId: newFile.id,
+        });
       },
 
       // Tab operations (within active file)
@@ -152,10 +257,11 @@ export const useWhiteboardStore = create<AppStore>()(
         set((state) => ({
           files: state.files.map((f) => {
             if (f.id !== activeFileId) return f;
-            if (f.tabs.length <= 1) return f; // Always keep at least one tab
+            if (f.tabs.length <= 1) return f;
 
             const newTabs = f.tabs.filter((t) => t.id !== tabId);
-            const newActiveTabId = f.activeTabId === tabId ? newTabs.at(-1)!.id : f.activeTabId;
+            const newActiveTabId =
+              f.activeTabId === tabId ? newTabs.at(-1)!.id : f.activeTabId;
 
             return {
               ...f,
@@ -211,17 +317,17 @@ export const useWhiteboardStore = create<AppStore>()(
           const currentTab = file.tabs[tabIndex];
 
           // Check if data actually changed to prevent unnecessary updates
-          const currentElements = currentTab.data.elements;
-          const currentAppState = currentTab.data.appState;
-          const currentFiles = currentTab.data.files;
-
-          // Compare elements and appState deeply to avoid unnecessary updates
-          const elementsChanged = JSON.stringify(currentElements) !== JSON.stringify(elements);
-          const appStateChanged = JSON.stringify(currentAppState) !== JSON.stringify(appState);
-          const filesChanged = JSON.stringify(currentFiles) !== JSON.stringify(files);
+          const elementsChanged =
+            JSON.stringify(currentTab.data.elements) !==
+            JSON.stringify(elements);
+          const appStateChanged =
+            JSON.stringify(currentTab.data.appState) !==
+            JSON.stringify(appState);
+          const filesChanged =
+            JSON.stringify(currentTab.data.files) !== JSON.stringify(files);
 
           if (!elementsChanged && !appStateChanged && !filesChanged) {
-            return state; // No change, skip update to prevent infinite loop
+            return state;
           }
 
           const newFiles = [...state.files];
@@ -257,6 +363,57 @@ export const useWhiteboardStore = create<AppStore>()(
             };
           }),
         }));
+      },
+
+      // Cloud sync operations
+      loadFiles: async () => {
+        const authState = useAuthStore.getState();
+        if (!authState.isAuthenticated) return;
+
+        set({ isLoading: true, syncStatus: "syncing" as const });
+
+        try {
+          const response = await fileService.listFiles();
+          const cloudFiles: WhiteboardFile[] = response.files.map(
+            (file: UserFile) => {
+              const tab = createEmptyTab("Sheet 1");
+              return {
+                id: file.id,
+                name: file.name,
+                tabs: [tab],
+                activeTabId: tab.id,
+                createdAt: new Date(file.createdAt).getTime(),
+                lastModified: new Date(file.updatedAt).getTime(),
+                isCloud: true,
+                cloudId: file.id,
+              };
+            }
+          );
+
+          set({
+            files: cloudFiles.length > 0 ? cloudFiles : [createEmptyFile("Untitled")],
+            isLoading: false,
+            syncStatus: "synced" as const,
+            lastSyncedAt: Date.now(),
+          });
+        } catch (error) {
+          console.error("Failed to sync from cloud:", error);
+          set({ isLoading: false, syncStatus: "error" as const });
+        }
+      },
+
+      syncToCloud: async (file: WhiteboardFile) => {
+        const authState = useAuthStore.getState();
+        if (!authState.isAuthenticated) return;
+
+        try {
+          await fileService.updateFile(file.cloudId || file.id, {
+            name: file.name,
+            tabCount: file.tabs.length,
+          });
+        } catch (error) {
+          console.error("Failed to sync to cloud:", error);
+        }
       },
 
       // Getters
@@ -301,7 +458,6 @@ export const useWhiteboardStore = create<AppStore>()(
         set((state) => ({
           files: state.files.map((f) => {
             if (f.id !== activeFileId) return f;
-            // Load native Excalidraw data into the active tab
             return {
               ...f,
               tabs: f.tabs.map((tab) =>
@@ -333,7 +489,17 @@ export const useWhiteboardStore = create<AppStore>()(
       partialize: (state) => ({
         files: state.files,
         activeFileId: state.activeFileId,
+        lastSyncedAt: state.lastSyncedAt,
       }),
     }
   )
 );
+
+// Auto-sync when auth state changes
+useAuthStore.subscribe((state, prevState) => {
+  if (state.isAuthenticated !== prevState.isAuthenticated) {
+    if (state.isAuthenticated) {
+      useWhiteboardStore.getState().loadFiles();
+    }
+  }
+});

@@ -11,15 +11,22 @@ import {
   Save,
   FolderOpen,
   Loader2,
+  Files,
 } from "lucide-react";
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
 import { useThemeStore } from "../store/useThemeStore";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { exportToSvg, exportToBlob } from "@excalidraw/excalidraw";
 import CollaborationPanel from "./CollaborationPanel";
-import type { WhiteboardTab } from "../store/useWhiteboardStore";
 import { apiService } from "../services/api";
-import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import {
+  exportActiveSheetJSON,
+  exportFileAllSheets,
+  exportActiveSheetPNG,
+  exportActiveSheetSVG,
+  handleFileImport,
+  saveActiveSheetToCloud,
+  loadActiveSheetFromCloud,
+} from "../services/exportImportService";
 
 interface ToolbarProps {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
@@ -34,9 +41,6 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { theme, toggleTheme } = useThemeStore();
   const {
-    loadFromFile,
-    loadNativeExcalidraw,
-    getActiveTab,
     getActiveTabRoomId,
     regenerateRoomId,
   } = useWhiteboardStore();
@@ -65,127 +69,58 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
     }
   }, [saveStatus]);
 
-  // Save canvas to database
+  // Save canvas to cloud
   const handleSaveToCloud = async () => {
-    if (!roomId || isSaving) return;
-
+    if (isSaving) return;
     setIsSaving(true);
     setSaveStatus(null);
 
-    try {
-      const result = await apiService.saveCanvas(roomId);
+    const result = await saveActiveSheetToCloud(apiService);
+    if (result.success) {
       setSaveStatus(`Saved ${result.count} elements`);
-    } catch (err) {
-      console.error("Failed to save canvas:", err);
-      setSaveStatus("Save failed");
-    } finally {
-      setIsSaving(false);
+    } else {
+      setSaveStatus(result.error || "Save failed");
     }
+    setIsSaving(false);
   };
 
-  // Load canvas from database
+  // Load canvas from cloud
   const handleLoadFromCloud = async () => {
-    if (!roomId || !excalidrawAPI || isLoading) return;
-
+    if (!excalidrawAPI || isLoading) return;
     setIsLoading(true);
     setSaveStatus(null);
 
-    try {
-      const result = await apiService.loadCanvas(roomId);
-      if (result.elements && result.elements.length > 0) {
-        excalidrawAPI.updateScene({
-          elements: result.elements as OrderedExcalidrawElement[],
-        });
-        excalidrawAPI.history.clear();
-        setSaveStatus(`Loaded ${result.count} elements`);
-      } else {
-        setSaveStatus("No saved canvas found");
-      }
-    } catch (err) {
-      console.error("Failed to load canvas:", err);
-      setSaveStatus("Load failed");
-    } finally {
-      setIsLoading(false);
+    const result = await loadActiveSheetFromCloud(excalidrawAPI, apiService);
+    if (result.success) {
+      setSaveStatus(`Loaded ${result.count} elements`);
+    } else {
+      setSaveStatus(result.error || "Load failed");
     }
+    setIsLoading(false);
   };
 
-  // Export in native Excalidraw format (current tab only)
+  // Export handlers
   const handleExportJSON = () => {
     if (!excalidrawAPI) return;
+    exportActiveSheetJSON(excalidrawAPI);
+  };
 
-    const elements = excalidrawAPI.getSceneElements();
-    const appState = excalidrawAPI.getAppState();
-    const files = excalidrawAPI.getFiles();
-
-    const exportData = {
-      type: "excalidraw",
-      version: 2,
-      source: "whiteboard-app",
-      elements: elements,
-      appState: {
-        viewBackgroundColor: appState.viewBackgroundColor,
-        gridSize: appState.gridSize,
-      },
-      files: files,
-    };
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const activeTab = getActiveTab();
-    a.download = `${activeTab?.title || "whiteboard"}.excalidraw`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExportAllSheets = () => {
+    if (!excalidrawAPI) return;
+    exportFileAllSheets(excalidrawAPI);
   };
 
   const handleExportPNG = async () => {
     if (!excalidrawAPI) return;
-    const elements = excalidrawAPI.getSceneElements();
-    const appState = excalidrawAPI.getAppState();
-    const files = excalidrawAPI.getFiles();
-
-    const blob = await exportToBlob({
-      elements,
-      appState: { ...appState, exportWithDarkMode: false },
-      files,
-      mimeType: "image/png",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const activeTab = getActiveTab();
-    a.download = `${activeTab?.title || "whiteboard"}.png`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await exportActiveSheetPNG(excalidrawAPI);
   };
 
   const handleExportSVG = async () => {
     if (!excalidrawAPI) return;
-    const elements = excalidrawAPI.getSceneElements();
-    const appState = excalidrawAPI.getAppState();
-    const files = excalidrawAPI.getFiles();
-
-    const svg = await exportToSvg({
-      elements,
-      appState: { ...appState, exportWithDarkMode: false },
-      files,
-    });
-
-    const svgString = new XMLSerializer().serializeToString(svg);
-    const blob = new Blob([svgString], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const activeTab = getActiveTab();
-    a.download = `${activeTab?.title || "whiteboard"}.svg`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await exportActiveSheetSVG(excalidrawAPI);
   };
 
+  // Import handlers
   const handleImport = () => {
     fileInputRef.current?.click();
   };
@@ -196,52 +131,12 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target?.result as string);
+      const content = event.target?.result as string;
+      if (!excalidrawAPI) return;
 
-        // Check if it's our multi-tab format
-        if (data.tabs && data.activeTabId) {
-          loadFromFile(data);
-          if (excalidrawAPI) {
-            const activeTab = data.tabs.find(
-              (t: WhiteboardTab) => t.id === data.activeTabId
-            );
-            if (activeTab) {
-              excalidrawAPI.updateScene({
-                elements: activeTab.data.elements,
-              });
-              excalidrawAPI.history.clear();
-            }
-          }
-        }
-        // Check if it's native Excalidraw format
-        else if (Array.isArray(data.elements) || data.type === "excalidraw") {
-          const elements = data.elements || [];
-          const appState = data.appState || {};
-          const files = data.files || {};
-
-          loadNativeExcalidraw(elements, appState, files);
-
-          if (excalidrawAPI) {
-            excalidrawAPI.updateScene({ elements });
-            excalidrawAPI.history.clear();
-          }
-        }
-        // Maybe it's just an array of elements
-        else if (Array.isArray(data)) {
-          loadNativeExcalidraw(data, {}, {});
-
-          if (excalidrawAPI) {
-            excalidrawAPI.updateScene({ elements: data });
-            excalidrawAPI.history.clear();
-          }
-        }
-        else {
-          alert("Unrecognized file format");
-        }
-      } catch (err) {
-        console.error("Failed to parse file:", err);
-        alert("Invalid file format: " + (err as Error).message);
+      const success = handleFileImport(content, excalidrawAPI);
+      if (!success) {
+        alert("Unrecognized file format");
       }
     };
     reader.readAsText(file);
@@ -312,7 +207,16 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
                 }`}
               >
                 <FileJson size={16} />
-                <span>Export JSON</span>
+                <span>Export Sheet (.excalidraw)</span>
+              </button>
+              <button
+                onClick={handleExportAllSheets}
+                className={`flex items-center gap-3 px-4 py-2.5 w-full text-left text-sm border-b ${
+                  theme === "dark" ? "hover:bg-gray-700 text-gray-200 border-gray-700" : "hover:bg-gray-100 text-gray-700 border-gray-100"
+                }`}
+              >
+                <Files size={16} />
+                <span>Export File (all sheets)</span>
               </button>
               <button
                 onClick={handleExportPNG}

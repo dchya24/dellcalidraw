@@ -19,8 +19,11 @@ import { roomPermissionsService } from "../services/roomPermissionsService";
 import { apiService } from "../services/api";
 import {
   exportFileAllSheets,
+  exportActiveSheetJSON,
+  exportActiveSheetSVG,
   importDellcalidrawAsNewFile,
   parseImportData,
+  loadActiveSheetFromCloud,
 } from "../services/exportImportService";
 import TabBar from "./TabBar";
 import Toolbar from "./Toolbar";
@@ -32,7 +35,7 @@ import RoomInviteDialog from "./RoomInviteDialog";
 import ConflictResolutionPanel from "./ConflictResolutionPanel";
 import RoomSettingsPanel from "./RoomSettingsPanel";
 import RoomPasswordDialog from "./RoomPasswordDialog";
-import { HardDriveDownload, LogIn, LogOut, Moon, Save, Sun } from "lucide-react";
+import { HardDriveDownload, LogIn, LogOut, Moon, Save, Sun, Files, FileType, FolderOpen, Download } from "lucide-react";
 
 interface WhiteboardProps {
   username: string;
@@ -861,12 +864,97 @@ export default function Whiteboard({
     exportFileAllSheets(api);
   };
 
+  const handleExportSheet = () => {
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+    exportActiveSheetJSON(api);
+  };
+
+  const handleExportSVG = async () => {
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+    await exportActiveSheetSVG(api);
+  };
+
+  const handleLoadFromCloud = async () => {
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+    const result = await loadActiveSheetFromCloud(api, apiService);
+    if (result.error) {
+      console.warn("Load from cloud:", result.error);
+    }
+  };
+
+  // File input ref for MainMenu import
+  const mainMenuFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleMainMenuImport = () => {
+    mainMenuFileInputRef.current?.click();
+  };
+
+  const handleMainMenuFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const result = parseImportData(content);
+
+      switch (result.format) {
+        case "dellcalidraw":
+          importDellcalidrawAsNewFile(result.data, api);
+          break;
+        case "excalidraw": {
+          const { loadNativeExcalidraw } = useWhiteboardStore.getState();
+          const elements = result.data.elements || [];
+          const appState = result.data.appState || {};
+          const files = result.data.files || {};
+          loadNativeExcalidraw(
+            elements as Parameters<typeof loadNativeExcalidraw>[0],
+            appState,
+            files
+          );
+          api.updateScene({ elements: elements as Parameters<typeof api.updateScene>[0]["elements"] });
+          api.history.clear();
+          break;
+        }
+        case "elements": {
+          const { loadNativeExcalidraw } = useWhiteboardStore.getState();
+          loadNativeExcalidraw(
+            result.data as Parameters<typeof loadNativeExcalidraw>[0],
+            {},
+            {}
+          );
+          api.updateScene({ elements: result.data as Parameters<typeof api.updateScene>[0]["elements"] });
+          api.history.clear();
+          break;
+        }
+        case "unknown":
+          alert("Unrecognized file format");
+          break;
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
   return (
     <div
       className={`w-screen h-screen flex flex-col ${theme === "dark" ? "dark" : ""}`}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
+      {/* Hidden file input for MainMenu import */}
+      <input
+        type="file"
+        ref={mainMenuFileInputRef}
+        onChange={handleMainMenuFileChange}
+        accept=".excalidraw,.dellcalidraw,.json"
+        className="hidden"
+      />
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} excalidrawAPI={excalidrawAPI} />
 
       <div className="flex-1 relative z-0">
@@ -921,18 +1009,46 @@ export default function Whiteboard({
             <MainMenu.Group>
               <MainMenu.DefaultItems.LoadScene />
               <MainMenu.Item
+                icon={<Download size={16} />}
+                onClick={handleMainMenuImport}
+              >
+                Import File
+              </MainMenu.Item>
+              <MainMenu.Item
                 icon={<HardDriveDownload size={16} />}
+                onClick={handleExportSheet}
+              >
+                Export Sheet (.excalidraw)
+              </MainMenu.Item>
+              <MainMenu.Item
+                icon={<Files size={16} />}
                 onClick={handleExportJSON}
               >
-                Save To File
+                Export File (all sheets)
               </MainMenu.Item>
+              <MainMenu.DefaultItems.SaveAsImage />
+              <MainMenu.Item
+                icon={<FileType size={16} />}
+                onClick={handleExportSVG}
+              >
+                Export SVG
+              </MainMenu.Item>
+            </MainMenu.Group>
+            <MainMenu.Group>
               <MainMenu.Item
                 icon={<Save size={16} />}
                 onClick={handleSaveToCloud}
               >
                 Save To Cloud
               </MainMenu.Item>
-              <MainMenu.DefaultItems.SaveAsImage />
+              <MainMenu.Item
+                icon={<FolderOpen size={16} />}
+                onClick={handleLoadFromCloud}
+              >
+                Load From Cloud
+              </MainMenu.Item>
+            </MainMenu.Group>
+            <MainMenu.Group>
               <MainMenu.DefaultItems.SearchMenu />
               <MainMenu.Item
                 icon={theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}

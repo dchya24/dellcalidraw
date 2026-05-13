@@ -30,6 +30,7 @@ import Toolbar from "./Toolbar";
 import ConfirmDialog from "./ConfirmDialog";
 import Sidebar from "./Sidebar";
 import RemoteCursors from "./RemoteCursors";
+import AIChatPanel from "./ai/AIChatPanel";
 import FloatingTab from "./FloatingTab";
 import RoomInviteDialog from "./RoomInviteDialog";
 import ConflictResolutionPanel from "./ConflictResolutionPanel";
@@ -1076,6 +1077,7 @@ export default function Whiteboard({
             </MainMenu.Group>
           </MainMenu>
         </Excalidraw>
+        <AIChatPanel excalidrawAPI={excalidrawAPI} />
         <RemoteCursors excalidrawAPI={excalidrawAPI} />
         {/* Conflict Resolution Panel */}
         <ConflictResolutionPanel

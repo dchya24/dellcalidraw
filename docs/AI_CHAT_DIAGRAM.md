@@ -267,13 +267,15 @@ Frontend:
 ```
 src/
 ├── components/
-│   └── AIChatPanel.tsx          # Chat UI component
+│   └── ai/
+│       └── AIChatPanel.tsx          # Chat UI component (✅ implemented)
 ├── services/
-│   └── aiService.ts             # AI API client + SSE handling
+│   └── ai/
+│       └── aiService.ts             # AI API client + SSE handling (✅ implemented)
 ├── store/
-│   └── useAIChatStore.ts        # Chat history, loading state
+│   └── useAIChatStore.ts            # Chat history, per-sheet conversations (✅ implemented)
 └── types/
-    └── ai.ts                    # AI-related types
+    └── ai.ts                         # AI-related types (✅ implemented)
 ```
 
 ### File Structure (BE)
@@ -374,13 +376,13 @@ Ini powerful karena:
 
 ## Implementation Phases
 
-### Phase 1: Basic Chat + Simple Generation (MVP)
-- [ ] Chat panel UI (FE)
-- [ ] AI service + SSE client (FE)
-- [ ] Backend proxy endpoint (`/api/ai/chat`)
-- [ ] OpenAI provider implementation
-- [ ] Basic tools: `create_rectangle`, `create_text`, `create_arrow`
-- [ ] Canvas context in request
+### Phase 1: Basic Chat + Simple Generation (MVP) ✅
+- [x] Chat panel UI (FE) — `src/components/ai/AIChatPanel.tsx`
+- [x] AI service + SSE client (FE) — `src/services/ai/aiService.ts`
+- [ ] Backend proxy endpoint (`/api/ai/chat`) — **PENDING (BE)**
+- [ ] OpenAI provider implementation — **PENDING (BE)**
+- [x] Basic tools: `create_rectangle`, `create_text`, `create_arrow` — tools defined in AIChatPanel.tsx
+- [x] Canvas context in request — sent via canvasContext param
 
 ### Phase 2: Full Tool Set + Streaming
 - [ ] All drawing tools (diamond, ellipse, line)

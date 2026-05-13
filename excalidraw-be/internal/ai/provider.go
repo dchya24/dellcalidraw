@@ -95,6 +95,9 @@ Available tools:
 - create_ellipse: Create an ellipse. Args: x, y, width, height, label (optional), strokeColor (optional), backgroundColor (optional)
 - create_diamond: Create a diamond shape. Args: x, y, width, height, label (optional), strokeColor (optional), backgroundColor (optional)
 - create_line: Create a line. Args: points (array of [x,y] arrays), strokeColor (optional)
+- move_elements: Move elements. Args: elementIds (array of IDs), deltaX, deltaY
+- delete_elements: Delete elements. Args: elementIds (array of IDs)
+- update_element_style: Update element style. Args: elementIds (array), backgroundColor (optional), strokeColor (optional), strokeWidth (optional), opacity (optional)
 - get_canvas_state: Get current canvas state. Returns: element count, types, bounding box
 
 IMPORTANT:
@@ -250,6 +253,57 @@ func GetDefaultTools() []Tool {
 				Type:       "object",
 				Properties: map[string]interface{}{},
 				Required:   []string{},
+			},
+		},
+		{
+			Name:        "move_elements",
+			Description: "Move existing elements by offset",
+			InputSchema: struct {
+				Type       string                 `json:"type"`
+				Properties map[string]interface{} `json:"properties,omitempty"`
+				Required   []string               `json:"required,omitempty"`
+			}{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"elementIds": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "IDs of elements to move"},
+					"deltaX":     map[string]interface{}{"type": "number", "description": "Horizontal offset"},
+					"deltaY":     map[string]interface{}{"type": "number", "description": "Vertical offset"},
+				},
+				Required: []string{"elementIds", "deltaX", "deltaY"},
+			},
+		},
+		{
+			Name:        "delete_elements",
+			Description: "Delete elements from canvas",
+			InputSchema: struct {
+				Type       string                 `json:"type"`
+				Properties map[string]interface{} `json:"properties,omitempty"`
+				Required   []string               `json:"required,omitempty"`
+			}{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"elementIds": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "IDs of elements to delete"},
+				},
+				Required: []string{"elementIds"},
+			},
+		},
+		{
+			Name:        "update_element_style",
+			Description: "Update visual style of elements (color, stroke, opacity)",
+			InputSchema: struct {
+				Type       string                 `json:"type"`
+				Properties map[string]interface{} `json:"properties,omitempty"`
+				Required   []string               `json:"required,omitempty"`
+			}{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"elementIds":      map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "IDs of elements to update"},
+					"backgroundColor": map[string]interface{}{"type": "string", "description": "Fill color (hex)"},
+					"strokeColor":     map[string]interface{}{"type": "string", "description": "Stroke color (hex)"},
+					"strokeWidth":     map[string]interface{}{"type": "number", "description": "Stroke width"},
+					"opacity":         map[string]interface{}{"type": "number", "description": "Opacity 0-100"},
+				},
+				Required: []string{"elementIds"},
 			},
 		},
 	}

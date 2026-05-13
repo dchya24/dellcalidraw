@@ -378,12 +378,14 @@ Ini powerful karena:
 - [x] Basic tools: `create_rectangle`, `create_text`, `create_arrow` — tools defined in provider.go
 - [x] Canvas context in request — sent via canvasContext param
 
-### Phase 2: Full Tool Set + Streaming
-- [ ] All drawing tools (diamond, ellipse, line)
-- [ ] Layout tools (flowchart, grid)
-- [ ] Streaming elements to canvas (appear one by one)
-- [ ] Modify tools (move, delete, style)
-- [ ] Anthropic provider
+### Phase 2: Full Tool Set + Streaming ✅
+- [x] All drawing tools (diamond, ellipse, line) — FE element generator + BE tool defs
+- [ ] Layout tools (flowchart, grid) — **deferred to Phase 3 (Mermaid better)**
+- [x] Streaming elements to canvas (appear one by one) — immediate updateScene per tool_call
+- [x] Modify tools (move, delete, style) — move_elements, delete_elements, update_element_style
+- [x] Anthropic provider — `internal/ai/anthropic.go`
+- [x] OpenAI streaming fix — accumulate tool call arguments before emitting
+- [x] Provider selection via config — `EXCALIDRAW_AI_PROVIDER=openai|anthropic`
 
 ### Phase 3: Mermaid + Advanced
 - [ ] Mermaid-to-Excalidraw integration

@@ -12,10 +12,10 @@ import (
 
 // OpenAIProvider implements LLMProvider for OpenAI-compatible APIs
 type OpenAIProvider struct {
-	BaseURL    string
-	APIKey     string
-	Model      string
-	MaxTokens  int
+	BaseURL     string
+	APIKey      string
+	Model       string
+	MaxTokens   int
 	Temperature float64
 }
 
@@ -30,7 +30,7 @@ func NewOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature
 	if maxTokens == 0 {
 		maxTokens = 4096
 	}
-	
+
 	return &OpenAIProvider{
 		BaseURL:     baseURL,
 		APIKey:      apiKey,
@@ -71,9 +71,9 @@ type openAIResponse struct {
 	ID      string `json:"id"`
 	Choices []struct {
 		Message struct {
-			Role         string `json:"role"`
-			Content      string `json:"content"`
-			ToolCalls    []struct {
+			Role      string `json:"role"`
+			Content   string `json:"content"`
+			ToolCalls []struct {
 				ID       string `json:"id"`
 				Type     string `json:"type"`
 				Function struct {
@@ -90,7 +90,7 @@ type openAIResponse struct {
 	} `json:"error,omitempty"`
 }
 
-// Chat implements LLMProvider.Chat
+// Chat implements LLMProvider.Chat (non-streaming)
 func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []Tool, model string) (*ChatResult, error) {
 	if model == "" {
 		model = p.Model
@@ -156,7 +156,6 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []T
 		ToolCalls: make([]ToolCall, 0),
 	}
 
-	// Parse tool calls
 	for _, tc := range choice.Message.ToolCalls {
 		var args map[string]interface{}
 		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
@@ -172,7 +171,16 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []T
 	return result, nil
 }
 
-// ChatStream implements LLMProvider.ChatStream
+// ─── Streaming ──────────────────────────────────────────────────────────────
+
+// pendingToolCall accumulates streamed tool call fragments
+type pendingToolCall struct {
+	ID   string
+	Name string
+	Args strings.Builder
+}
+
+// ChatStream implements LLMProvider.ChatStream with proper tool call accumulation
 func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, tools []Tool, model string, streamFunc func(SSEEvent) error) error {
 	if model == "" {
 		model = p.Model
@@ -216,52 +224,60 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 		return fmt.Errorf("OpenAI API error (%d): %s", resp.StatusCode, string(respBody))
 	}
 
-	// Parse SSE stream
+	// Track pending tool calls (OpenAI streams arguments incrementally)
+	pendingCalls := make(map[int]*pendingToolCall)
+
 	reader := io.Reader(resp.Body)
-	lineBuf := make([]byte, 0, 1024)
+	lineBuf := make([]byte, 0, 4096)
 	buf := make([]byte, 4096)
 
 	for {
-		n, err := reader.Read(buf)
+		n, readErr := reader.Read(buf)
 		if n > 0 {
 			lineBuf = append(lineBuf, buf[:n]...)
-			
-			// Process complete lines
+
 			for {
-				lineEnd := -1
-				for i, b := range lineBuf {
-					if b == '\n' {
-						lineEnd = i
-						break
-					}
-				}
-				
+				lineEnd := bytes.IndexByte(lineBuf, '\n')
 				if lineEnd < 0 {
-					break // No complete line
+					break
 				}
-				
+
 				line := string(lineBuf[:lineEnd])
 				lineBuf = lineBuf[lineEnd+1:]
-				
-				// Parse SSE line
-				if strings.HasPrefix(line, "data: ") {
-					data := line[6:]
-					if data == "[DONE]" {
-						continue
+				line = strings.TrimSpace(line)
+
+				if !strings.HasPrefix(line, "data: ") {
+					continue
+				}
+
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" {
+					// Flush any remaining pending tool calls
+					for _, pc := range pendingCalls {
+						if err := flushToolCall(pc, streamFunc); err != nil {
+							return err
+						}
 					}
-					
-					// Parse streaming chunk
-					if err := p.parseStreamChunk(data, streamFunc); err != nil {
-						return err
-					}
+					continue
+				}
+
+				if err := p.processStreamChunk(data, pendingCalls, streamFunc); err != nil {
+					return err
 				}
 			}
 		}
-		
-		if err != nil {
-			if err == io.EOF {
+
+		if readErr != nil {
+			if readErr == io.EOF {
 				break
 			}
+			return readErr
+		}
+	}
+
+	// Flush any remaining
+	for _, pc := range pendingCalls {
+		if err := flushToolCall(pc, streamFunc); err != nil {
 			return err
 		}
 	}
@@ -269,13 +285,15 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 	return nil
 }
 
-// parseStreamChunk parses a streaming response chunk
-func (p *OpenAIProvider) parseStreamChunk(data string, streamFunc func(SSEEvent) error) error {
+// processStreamChunk handles a single SSE data chunk
+func (p *OpenAIProvider) processStreamChunk(data string, pendingCalls map[int]*pendingToolCall, streamFunc func(SSEEvent) error) error {
 	var chunk struct {
 		Choices []struct {
+			Index int `json:"index"`
 			Delta struct {
 				Content   string `json:"content"`
 				ToolCalls []struct {
+					Index    int    `json:"index"`
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function struct {
@@ -284,21 +302,22 @@ func (p *OpenAIProvider) parseStreamChunk(data string, streamFunc func(SSEEvent)
 					} `json:"function"`
 				} `json:"tool_calls,omitempty"`
 			} `json:"delta"`
-			FinishReason string `json:"finish_reason"`
+			FinishReason *string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 
 	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-		return nil // Skip malformed chunks
+		return nil // skip malformed
 	}
 
 	if len(chunk.Choices) == 0 {
 		return nil
 	}
 
-	delta := chunk.Choices[0].Delta
+	choice := chunk.Choices[0]
+	delta := choice.Delta
 
-	// Send text content
+	// Stream text content immediately
 	if delta.Content != "" {
 		if err := streamFunc(SSEEvent{
 			Type:    "text",
@@ -308,28 +327,70 @@ func (p *OpenAIProvider) parseStreamChunk(data string, streamFunc func(SSEEvent)
 		}
 	}
 
-	// Send tool calls
+	// Accumulate tool call arguments
 	for _, tc := range delta.ToolCalls {
-		var args map[string]interface{}
-		json.Unmarshal([]byte(tc.Function.Arguments), &args)
-		
-		if err := streamFunc(SSEEvent{
-			Type: "tool_call",
-			ID:   tc.ID,
-			Name: tc.Function.Name,
-		}); err != nil {
-			return err
+		idx := tc.Index
+		pc, exists := pendingCalls[idx]
+
+		if !exists {
+			// New tool call
+			pc = &pendingToolCall{
+				ID:   tc.ID,
+				Name: tc.Function.Name,
+			}
+			pendingCalls[idx] = pc
 		}
-		
-		// Also send tool arguments as result
-		if err := streamFunc(SSEEvent{
-			Type:   "tool_result",
-			CallID: tc.ID,
-			Name:   tc.Function.Name,
-			Result: args,
-		}); err != nil {
-			return err
+
+		// OpenAI may send ID and Name only in the first chunk
+		if tc.ID != "" {
+			pc.ID = tc.ID
 		}
+		if tc.Function.Name != "" {
+			pc.Name = tc.Function.Name
+		}
+
+		// Accumulate argument fragments
+		if tc.Function.Arguments != "" {
+			pc.Args.WriteString(tc.Function.Arguments)
+		}
+	}
+
+	// If finish_reason is "tool_calls", flush all pending
+	if choice.FinishReason != nil && *choice.FinishReason == "tool_calls" {
+		for idx, pc := range pendingCalls {
+			if err := flushToolCall(pc, streamFunc); err != nil {
+				return err
+			}
+			delete(pendingCalls, idx)
+		}
+	}
+
+	return nil
+}
+
+// flushToolCall sends accumulated tool call as SSE event
+func flushToolCall(pc *pendingToolCall, streamFunc func(SSEEvent) error) error {
+	if pc.Name == "" {
+		return nil
+	}
+
+	var args map[string]interface{}
+	rawArgs := pc.Args.String()
+	if rawArgs != "" {
+		json.Unmarshal([]byte(rawArgs), &args)
+	}
+	if args == nil {
+		args = map[string]interface{}{}
+	}
+
+	// Send tool_call event with complete arguments
+	if err := streamFunc(SSEEvent{
+		Type:   "tool_call",
+		ID:     pc.ID,
+		Name:   pc.Name,
+		Result: args,
+	}); err != nil {
+		return err
 	}
 
 	return nil
@@ -340,7 +401,8 @@ func (p *OpenAIProvider) GetModels() []string {
 	return SupportedModels()
 }
 
-// Helper functions
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 func convertMessages(messages []Message) []openAIMessage {
 	result := make([]openAIMessage, len(messages))
 	for i, m := range messages {

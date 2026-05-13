@@ -110,14 +110,25 @@ func main() {
 	// Initialize AI provider
 	var aiHandler *ai.Handler
 	if cfg.AI.APIKey != "" {
-		openaiProvider := ai.NewOpenAIProvider(
-			cfg.AI.APIKey,
-			cfg.AI.BaseURL,
-			cfg.AI.Model,
-			cfg.AI.MaxTokens,
-			cfg.AI.Temperature,
-		)
-		aiHandler = ai.NewHandler(openaiProvider)
+		var provider ai.LLMProvider
+		switch cfg.AI.Provider {
+		case "anthropic":
+			provider = ai.NewAnthropicProvider(
+				cfg.AI.APIKey,
+				cfg.AI.Model,
+				cfg.AI.MaxTokens,
+				cfg.AI.Temperature,
+			)
+		default: // "openai" or any OpenAI-compatible
+			provider = ai.NewOpenAIProvider(
+				cfg.AI.APIKey,
+				cfg.AI.BaseURL,
+				cfg.AI.Model,
+				cfg.AI.MaxTokens,
+				cfg.AI.Temperature,
+			)
+		}
+		aiHandler = ai.NewHandler(provider)
 	}
 
 	// Setup router

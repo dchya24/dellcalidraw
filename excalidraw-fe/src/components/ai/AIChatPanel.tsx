@@ -123,9 +123,6 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
       timestamp: Date.now(),
     });
 
-    // Collect elements from tool calls
-    const newElements: unknown[] = [];
-
     await sendChatMessage({
       message: userMessage.content,
       canvasContext: {
@@ -135,9 +132,11 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
         roomId: activeTab.roomId,
       },
       onEvent: (event) => {
+        if (!excalidrawAPI) return;
+
         switch (event.type) {
           case "text":
-            // Update assistant message with text
+            // Update assistant message with streaming text
             addMessage(currentTabId, {
               id: assistantMsgId,
               role: "assistant",
@@ -147,25 +146,39 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
             break;
 
           case "tool_call": {
-            // Generate element based on tool call
-            const element = generateElementFromTool(event.name, event.arguments);
+            const args = (event.arguments || {}) as Record<string, unknown>;
+            const toolName = event.name;
+
+            // Handle modify tools
+            if (toolName === "move_elements") {
+              applyMoveElements(excalidrawAPI, args);
+              break;
+            }
+            if (toolName === "delete_elements") {
+              applyDeleteElements(excalidrawAPI, args);
+              break;
+            }
+            if (toolName === "update_element_style") {
+              applyUpdateStyle(excalidrawAPI, args);
+              break;
+            }
+
+            // Handle create tools — add to canvas immediately (streaming)
+            const element = generateElementFromTool(toolName, args);
             if (element) {
-              newElements.push(element);
+              const currentElements = excalidrawAPI.getSceneElements();
+              excalidrawAPI.updateScene({
+                elements: [...currentElements, element as Parameters<typeof excalidrawAPI.updateScene>[0]["elements"][number]],
+              });
             }
             break;
           }
 
           case "tool_result":
-            // Handle tool result if needed
             break;
 
           case "done":
-            // Add all generated elements to canvas
-            if (newElements.length > 0 && excalidrawAPI) {
-              const currentElements = excalidrawAPI.getSceneElements();
-              excalidrawAPI.updateScene({
-                elements: [...currentElements, ...(newElements as Parameters<typeof excalidrawAPI.updateScene>[0]["elements"])],
-              });
+            if (excalidrawAPI) {
               excalidrawAPI.history.clear();
             }
             break;
@@ -531,7 +544,94 @@ function generateElementFromTool(
       } as unknown;
     }
 
+    case "create_line": {
+      const rawPoints = args.points as [number, number][] || [[0, 0], [100, 0]];
+      return {
+        ...base,
+        type: "line" as const,
+        x: rawPoints[0]?.[0] || 0,
+        y: rawPoints[0]?.[1] || 0,
+        width: 100,
+        height: 0,
+        angle: 0,
+        strokeColor: String(args.strokeColor || "#000000"),
+        backgroundColor: "transparent",
+        fillStyle: "solid" as const,
+        strokeWidth: 1,
+        strokeStyle: "solid" as const,
+        roughness: 1,
+        opacity: 100,
+        points: rawPoints.map((p, i) =>
+          i === 0 ? [0, 0] : [p[0] - rawPoints[0][0], p[1] - rawPoints[0][1]]
+        ),
+        lastCommittedPoint: null,
+        startBinding: null,
+        endBinding: null,
+        startArrowhead: null,
+        endArrowhead: null,
+      } as unknown;
+    }
+
     default:
       return null;
   }
+}
+
+// ─── Modify Tool Helpers ─────────────────────────────────────────────────────
+
+function applyMoveElements(
+  api: ExcalidrawImperativeAPI,
+  args: Record<string, unknown>
+): void {
+  const ids = (args.elementIds as string[]) || [];
+  const dx = Number(args.deltaX || 0);
+  const dy = Number(args.deltaY || 0);
+  if (ids.length === 0) return;
+
+  const elements = api.getSceneElements();
+  const updated = elements.map((el) => {
+    if (ids.includes(el.id)) {
+      return { ...el, x: el.x + dx, y: el.y + dy };
+    }
+    return el;
+  });
+  api.updateScene({ elements: updated });
+}
+
+function applyDeleteElements(
+  api: ExcalidrawImperativeAPI,
+  args: Record<string, unknown>
+): void {
+  const ids = (args.elementIds as string[]) || [];
+  if (ids.length === 0) return;
+
+  const elements = api.getSceneElements();
+  const updated = elements.map((el) => {
+    if (ids.includes(el.id)) {
+      return { ...el, isDeleted: true };
+    }
+    return el;
+  });
+  api.updateScene({ elements: updated });
+}
+
+function applyUpdateStyle(
+  api: ExcalidrawImperativeAPI,
+  args: Record<string, unknown>
+): void {
+  const ids = (args.elementIds as string[]) || [];
+  if (ids.length === 0) return;
+
+  const elements = api.getSceneElements();
+  const updated = elements.map((el) => {
+    if (!ids.includes(el.id)) return el;
+
+    const patched = { ...el } as Record<string, unknown>;
+    if (args.backgroundColor !== undefined) patched.backgroundColor = String(args.backgroundColor);
+    if (args.strokeColor !== undefined) patched.strokeColor = String(args.strokeColor);
+    if (args.strokeWidth !== undefined) patched.strokeWidth = Number(args.strokeWidth);
+    if (args.opacity !== undefined) patched.opacity = Number(args.opacity);
+    return patched;
+  });
+  api.updateScene({ elements: updated as typeof elements });
 }

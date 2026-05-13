@@ -14,16 +14,34 @@ function App() {
   const { user, isAuthenticated, refreshToken, clearAuth } = useAuthStore();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
-  const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
-  const [resetToken, setResetToken] = useState<string>("");
 
-  const username = user?.username || (() => {
+  // 1. Helper to get the token (optional, keeps code clean)
+  const getInitialToken = () => {
+    if (typeof window === "undefined") return null;
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get("reset-token") || urlParams.get("token");
+  };
+
+
+  const [resetToken, setResetToken] = useState(() => getInitialToken());
+  const [resetPasswordOpen, setResetPasswordOpen] = useState(() => {
+    const token = getInitialToken();
+    return !!(token && window.location.pathname.includes("reset-password"));
+  });
+
+  const [username] = useState(() => {
+    // 1. Check the 'user' object from props/context first
+    if (user?.username) return user.username;
+
+    // 2. Check localStorage
     const saved = localStorage.getItem("username");
     if (saved) return saved;
+
+    // 3. Generate new (Only happens once on mount)
     const newUsername = `User_${Math.random().toString(36).substring(2, 8)}`;
     localStorage.setItem("username", newUsername);
     return newUsername;
-  })();
+  });
 
   // Start/stop token refresh service based on auth state
   useEffect(() => {
@@ -43,19 +61,12 @@ function App() {
     useFileStore.getState().loadFiles();
   }, [isAuthenticated]);
 
-  // Check for password reset token in URL
+
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get("reset-token") || urlParams.get("token");
-    
-    // Check if this is a password reset URL
-    if (token && window.location.pathname.includes("reset-password")) {
-      setResetToken(token);
-      setResetPasswordOpen(true);
-      // Clean up URL
+    if (resetToken) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, []);
+  }, [resetToken]);
 
   useEffect(() => {
     const roomId = getRoomIdFromURL();

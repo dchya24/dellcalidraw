@@ -1,8 +1,10 @@
-# Excalidraw Backend - Entity Relationship Diagram
+# Dellcalidraw - Entity Relationship Diagram
 
 ## Overview
 
-This document describes the database schema for the Dellcalidraw project. The database uses PostgreSQL with the following entities:
+This document describes the database schema and architecture for the Dellcalidraw project. The project uses PostgreSQL for backend persistence with React frontend that supports both local storage and cloud sync.
+
+## Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -302,37 +304,131 @@ users
 
 ---
 
-## Data Flow
+## Data Model
 
-### Logged In User Flow
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                                                                  │
-│  user_files (metadata) ◄──── Database                          │
-│         │                                                      │
-│         │ 1 file has N sheets (tabs)                            │
-│         │                                                      │
-│         ▼                                                      │
-│  Each sheet = Room (rooms.key = roomId) ◄── WebSocket URL      │
-│         │                                                      │
-│         │ Contains canvas data                                  │
-│         ▼                                                      │
-│  room_elements (drawing data) + room_files (images)            │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-### Not Logged In Flow
+### User → File → Tab → Room
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                                                                  │
-│  Files stored in localStorage via Zustand persist                │
-│  Same structure: LocalFile[] with tabs/rooms                     │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
+┌─────────┐         ┌───────────┐         ┌──────┐         ┌────────┐
+│  User   │ 1:N     │ UserFile  │ 1:N     │ Room │ 1:N    │ Room   │
+│         │────────►│ (meta)    │────────►│(tab) │────────►│Element │
+└─────────┘         └───────────┘         └──────┘         │(canvas)│
+                                                          └────────┘
 ```
+
+- **User**: Has many files (user_files table)
+- **UserFile**: Contains metadata (name, tab count) and references tabs
+- **Room**: Each tab maps to a room (rooms table with unique key)
+- **RoomElement**: Actual canvas drawing data stored per room
+
+---
+
+## API Endpoints
+
+### Authentication
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/auth/register` | ❌ | Register new user |
+| POST | `/api/auth/login` | ❌ | Login user |
+| POST | `/api/auth/refresh` | ❌ | Refresh access token |
+| POST | `/api/auth/logout` | ❌ | Logout user |
+| POST | `/api/auth/forgot-password` | ❌ | Request password reset |
+| POST | `/api/auth/validate-reset-token` | ❌ | Validate reset token |
+| POST | `/api/auth/reset-password` | ❌ | Reset password |
+
+### User Management
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/users/me` | ✅ | Get current user profile |
+| PUT | `/api/users/me` | ✅ | Update current user profile |
+| GET | `/api/users/:id` | ✅ | Get user by ID |
+
+### File Management
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/files` | ✅ | List all user files |
+| POST | `/api/files` | ✅ | Create new file |
+| GET | `/api/files/:fileId` | ✅ | Get file by ID |
+| PUT | `/api/files/:fileId` | ✅ | Update file metadata |
+| PATCH | `/api/files/:fileId/rename` | ✅ | Rename file |
+| DELETE | `/api/files/:fileId` | ✅ | Delete file |
+
+### Canvas Operations
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/rooms/:roomId/canvas/save` | ❌ | Save canvas state |
+| GET | `/api/rooms/:roomId/canvas/load` | ❌ | Load canvas state |
+| POST | `/api/rooms/:roomId/canvas/restore` | ❌ | Restore canvas |
+| DELETE | `/api/rooms/:roomId/canvas` | ❌ | Clear canvas |
+
+### File Upload
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/rooms/:roomId/files` | ❌ | Upload file |
+| GET | `/api/rooms/:roomId/files/:fileId` | ❌ | Download file |
+| DELETE | `/api/rooms/:roomId/files/:fileId` | ❌ | Delete file |
+| GET | `/api/rooms/:roomId/files` | ❌ | List room files |
+
+### WebSocket
+
+| Endpoint | Description |
+|----------|-------------|
+| `/ws` | Real-time collaboration WebSocket |
+
+---
+
+## Frontend Architecture
+
+### File Storage Strategy
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Frontend                              │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─────────────────────┐    ┌─────────────────────┐        │
+│  │   useAuthStore      │    │    useFileStore      │        │
+│  ├─────────────────────┤    ├─────────────────────┤        │
+│  │ user: User          │    │ localFiles: File[]   │        │
+│  │ isAuthenticated     │    │ activeFileId: string │        │
+│  │ accessToken         │    │ syncStatus           │        │
+│  │ refreshToken        │    │                      │        │
+│  └─────────────────────┘    └──────────┬──────────┘        │
+│                                          │                   │
+│                     ┌────────────────────┼────────────────────┐
+│                     │                    │                    │
+│                     ▼                    ▼                    ▼
+│           ┌─────────────────┐  ┌─────────────────┐  ┌────────────────┐
+│           │   NOT LOGGED IN │  │   LOGGED IN      │  │   REAL-TIME     │
+│           │                 │  │                 │  │                 │
+│           │ localStorage    │  │ API Sync        │  │   WebSocket     │
+│           │ (persist)       │  │ (fileService)   │  │   (roomService) │
+│           └─────────────────┘  └─────────────────┘  └────────────────┘
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Sync Flow
+
+1. **Not Authenticated**:
+   - Files stored in `localStorage` via Zustand persist
+   - All operations are local
+   - Data persists across sessions
+
+2. **Authenticated (Login)**:
+   - Auto-sync from cloud via `/api/files`
+   - Cloud files replace local files
+   - Changes sync to cloud
+
+3. **Logout**:
+   - Cloud files remain in localStorage
+   - New files stored locally
+   - Can log back in to sync again
 
 ---
 
@@ -349,45 +445,63 @@ users
 
 ---
 
-## API Endpoints
+## Project Structure
 
-### File Management (Requires Authentication)
+```
+dellcalidraw/
+├── docs/
+│   ├── erd/
+│   │   └── ERD.md              ← This file
+│   ├── be/
+│   │   ├── DEVELOPENT_PHASES.md
+│   │   └── BACKEND_REQUIREMENTS.md
+│   └── fe/
+│       └── FRONTEND_INTEGRATION.md
+│
+├── excalidraw-be/              ← Go Backend
+│   ├── cmd/server/
+│   │   ├── main.go
+│   │   ├── auth_handlers.go
+│   │   ├── file_management_handlers.go
+│   │   ├── canvas_handlers.go
+│   │   └── file_handlers.go
+│   └── internal/
+│       ├── auth/
+│       │   └── auth.go, middleware.go
+│       ├── database/
+│       │   ├── users.go
+│       │   ├── user_files.go
+│       │   ├── repository.go
+│       │   └── migrations/
+│       ├── room/
+│       └── websocket/
+│
+└── excalidraw-fe/              ← React Frontend
+    └── src/
+        ├── App.tsx
+        ├── components/
+        │   ├── Sidebar.tsx
+        │   ├── Whiteboard.tsx
+        │   └── AuthModal.tsx
+        ├── store/
+        │   ├── useAuthStore.ts
+        │   ├── useFileStore.ts     ← New: File management
+        │   └── useWhiteboardStore.ts
+        └── services/
+            ├── api.ts
+            ├── fileService.ts      ← New: File API client
+            └── roomService.ts
+```
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/files` | List all user files |
-| POST | `/api/files` | Create new file |
-| GET | `/api/files/:fileId` | Get file by ID |
-| PUT | `/api/files/:fileId` | Update file metadata |
-| PATCH | `/api/files/:fileId/rename` | Rename file |
-| DELETE | `/api/files/:fileId` | Delete file |
+---
 
-### Authentication
+## Glossary
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Register new user |
-| POST | `/api/auth/login` | Login user |
-| POST | `/api/auth/refresh` | Refresh access token |
-| POST | `/api/auth/logout` | Logout user |
-| POST | `/api/auth/forgot-password` | Request password reset |
-| POST | `/api/auth/validate-reset-token` | Validate reset token |
-| POST | `/api/auth/reset-password` | Reset password |
-
-### Canvas Operations
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/rooms/:roomId/canvas/save` | Save canvas state |
-| GET | `/api/rooms/:roomId/canvas/load` | Load canvas state |
-| POST | `/api/rooms/:roomId/canvas/restore` | Restore canvas |
-| DELETE | `/api/rooms/:roomId/canvas` | Clear canvas |
-
-### File Upload
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/rooms/:roomId/files` | Upload file |
-| GET | `/api/rooms/:roomId/files/:fileId` | Download file |
-| DELETE | `/api/rooms/:roomId/files/:fileId` | Delete file |
-| GET | `/api/rooms/:roomId/files` | List room files |
+| Term | Description |
+|------|-------------|
+| **File** | Top-level container with name and multiple tabs |
+| **Tab/Sheet** | Individual canvas, maps to a Room |
+| **Room** | Real-time collaboration space with unique URL |
+| **Room Element** | Drawing data (shapes, text, etc.) |
+| **Local Storage** | Browser localStorage for offline mode |
+| **Cloud Sync** | Sync with backend API when authenticated |

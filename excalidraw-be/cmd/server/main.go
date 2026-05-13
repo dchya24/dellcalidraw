@@ -151,12 +151,16 @@ func main() {
 		r.Post("/api/auth/validate-reset-token", authHandler.ValidateResetToken)
 		r.Post("/api/auth/reset-password", authHandler.ResetPassword)
 
-		// Protected routes (require JWT)
+		// File management routes (authenticated)
 		r.Group(func(r chi.Router) {
 			r.Use(auth.JWTMiddleware(authService))
-			r.Get("/api/users/me", authHandler.GetProfile)
-			r.Put("/api/users/me", authHandler.UpdateProfile)
-			r.Get("/api/users/{id}", authHandler.GetUserByID)
+			fileMgmtHandler := NewFileManagementHandler(dbClient, authService)
+			r.Get("/api/files", fileMgmtHandler.ListUserFiles)
+			r.Post("/api/files", fileMgmtHandler.CreateUserFile)
+			r.Get("/api/files/{fileId}", fileMgmtHandler.GetUserFile)
+			r.Put("/api/files/{fileId}", fileMgmtHandler.UpdateUserFile)
+			r.Patch("/api/files/{fileId}/rename", fileMgmtHandler.RenameUserFile)
+			r.Delete("/api/files/{fileId}", fileMgmtHandler.DeleteUserFile)
 		})
 	}
 

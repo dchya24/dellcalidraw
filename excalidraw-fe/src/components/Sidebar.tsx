@@ -1,7 +1,9 @@
+import { useFileStore } from "../store/useFileStore";
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
+import { useAuthStore } from "../store/useAuthStore";
 import { useThemeStore } from "../store/useThemeStore";
-import { FileText, Clock, Plus, FolderOpen, Trash2, Edit2 } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { FileText, Clock, Plus, FolderOpen, Trash2, Edit2, Cloud, CloudOff } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -9,8 +11,26 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
-  const { files, activeFileId, createFile, deleteFile, renameFile, setActiveFile } = useWhiteboardStore();
+  const { 
+    localFiles, 
+    activeFileId, 
+    createFile, 
+    deleteFile, 
+    renameFile, 
+    setActiveFile,
+    isLoading,
+    syncStatus
+  } = useFileStore();
+  
+  // Whiteboard store for tabs
+  const { 
+    files: whiteboardFiles, 
+    setActiveFile: setWhiteboardActiveFile 
+  } = useWhiteboardStore();
+  
+  const { isAuthenticated } = useAuthStore();
   const { theme } = useThemeStore();
+  
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -42,6 +62,17 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   const handleFileClick = (fileId: string) => {
     setActiveFile(fileId);
+    setWhiteboardActiveFile(fileId);
+  };
+
+  const handleCreateFile = () => {
+    createFile();
+  };
+
+  // Get tab count for a file (from whiteboard store if available)
+  const getTabCount = (fileId: string): number => {
+    const wbFile = whiteboardFiles.find(f => f.id === fileId);
+    return wbFile?.tabs.length || 1;
   };
 
   return (
@@ -66,25 +97,41 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             theme === "dark" ? "border-gray-700" : "border-gray-200"
           }`}
         >
-          <div>
-            <h2
-              className={`text-lg font-semibold ${
-                theme === "dark" ? "text-white" : "text-gray-900"
-              }`}
-            >
-              Files
-            </h2>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h2
+                className={`text-lg font-semibold ${
+                  theme === "dark" ? "text-white" : "text-gray-900"
+                }`}
+              >
+                Files
+              </h2>
+              {/* Cloud status indicator */}
+              {isAuthenticated && (
+                <span className="flex items-center gap-1">
+                  {syncStatus === "synced" ? (
+                    <Cloud size={14} className="text-green-500" />
+                  ) : syncStatus === "error" ? (
+                    <CloudOff size={14} className="text-red-500" />
+                  ) : (
+                    <Cloud size={14} className="text-blue-500 animate-pulse" />
+                  )}
+                </span>
+              )}
+            </div>
             <p
               className={`text-xs mt-1 ${
                 theme === "dark" ? "text-gray-400" : "text-gray-500"
               }`}
             >
-              {files.length} {files.length === 1 ? "file" : "files"} total
+              {localFiles.length} {localFiles.length === 1 ? "file" : "files"}
+              {isAuthenticated ? " (cloud synced)" : " (local only)"}
             </p>
           </div>
           <button
-            onClick={() => createFile()}
-            className={`p-2 rounded-lg transition-colors ${
+            onClick={handleCreateFile}
+            disabled={isLoading}
+            className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
               theme === "dark"
                 ? "bg-gray-700 hover:bg-gray-600 text-white"
                 : "bg-gray-100 hover:bg-gray-200 text-gray-700"
@@ -97,7 +144,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
         {/* Files List */}
         <div className="p-2">
-          {files.map((file) => (
+          {localFiles.map((file) => (
             <div
               key={file.id}
               onClick={() => handleFileClick(file.id)}
@@ -147,6 +194,9 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                     }`}
                   >
                     {file.name}
+                    {file.isCloud && (
+                      <Cloud size={12} className="inline ml-1 text-green-500" />
+                    )}
                   </span>
                 )}
 
@@ -165,7 +215,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                     >
                       <Edit2 size={12} />
                     </button>
-                    {files.length > 1 && (
+                    {localFiles.length > 1 && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -199,7 +249,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                       theme === "dark" ? "text-gray-400" : "text-gray-500"
                     }`}
                   >
-                    {file.tabs.length} {file.tabs.length === 1 ? "sheet" : "sheets"}
+                    {getTabCount(file.id)} {getTabCount(file.id) === 1 ? "sheet" : "sheets"}
                   </span>
                 </div>
 
@@ -222,6 +272,25 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
               </div>
             </div>
           ))}
+          
+          {localFiles.length === 0 && !isLoading && (
+            <div className="text-center py-8">
+              <FolderOpen size={32} className={theme === "dark" ? "text-gray-600" : "text-gray-300"} />
+              <p className={`mt-2 text-sm ${theme === "dark" ? "text-gray-500" : "text-gray-400"}`}>
+                No files yet
+              </p>
+              <button
+                onClick={handleCreateFile}
+                className={`mt-2 px-4 py-2 rounded-lg text-sm ${
+                  theme === "dark"
+                    ? "bg-blue-600 hover:bg-blue-500 text-white"
+                    : "bg-blue-500 hover:bg-blue-600 text-white"
+                }`}
+              >
+                Create your first file
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </>

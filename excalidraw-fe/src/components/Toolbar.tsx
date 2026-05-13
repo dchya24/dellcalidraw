@@ -27,9 +27,10 @@ interface ToolbarProps {
   username?: string;
   isAuthenticated?: boolean;
   onOpenRoomSettings?: () => void;
+  onSaveToCloud?: () => void;
 }
 
-export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Guest", isAuthenticated = false, onOpenRoomSettings }: ToolbarProps) {
+export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Guest", isAuthenticated = false, onOpenRoomSettings, onSaveToCloud }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { theme, toggleTheme } = useThemeStore();
   const {
@@ -340,7 +341,7 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
           theme === "dark" ? "border-gray-700" : "border-gray-200"
         }`}>
           <button
-            onClick={handleSaveToCloud}
+            onClick={onSaveToCloud || handleSaveToCloud}
             disabled={isSaving || !roomId}
             className={`p-2 rounded-lg transition-colors ${
               theme === "dark" 

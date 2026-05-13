@@ -16,6 +16,7 @@ import { elementSyncService } from "../services/elementSyncService";
 import { cursorService } from "../services/cursorService";
 import { selectionService } from "../services/selectionService";
 import { roomPermissionsService } from "../services/roomPermissionsService";
+import { apiService } from "../services/api";
 import TabBar from "./TabBar";
 import Toolbar from "./Toolbar";
 import ConfirmDialog from "./ConfirmDialog";
@@ -26,7 +27,7 @@ import RoomInviteDialog from "./RoomInviteDialog";
 import ConflictResolutionPanel from "./ConflictResolutionPanel";
 import RoomSettingsPanel from "./RoomSettingsPanel";
 import RoomPasswordDialog from "./RoomPasswordDialog";
-import { LogIn, LogOut } from "lucide-react";
+import { LogIn, LogOut, Save } from "lucide-react";
 
 interface WhiteboardProps {
   username: string;
@@ -816,6 +817,26 @@ export default function Whiteboard({
     setRoomSettingsOpen(true);
   }, []);
 
+  // Handle save canvas to cloud
+  const handleSaveToCloud = useCallback(async () => {
+    if (!roomId || !excalidrawAPI) {
+      console.warn("Cannot save: no room ID or Excalidraw API");
+      return;
+    }
+
+    try {
+      // Get current elements from Excalidraw
+      const elements = excalidrawAPI.getSceneElements();
+      console.log("💾 Saving canvas to cloud, elements count:", elements.length);
+
+      // Call the API endpoint to save
+      const response = await apiService.saveCanvas(roomId);
+      console.log("✅ Canvas saved:", response);
+    } catch (error) {
+      console.error("❌ Failed to save canvas to cloud:", error);
+    }
+  }, [roomId, excalidrawAPI]);
+
   if (!isReady) {
     return (
       <div className="w-screen h-screen flex items-center justify-center">
@@ -839,6 +860,7 @@ export default function Whiteboard({
           username={username}
           isAuthenticated={isAuthenticated}
           onOpenRoomSettings={handleOpenRoomSettings}
+          onSaveToCloud={handleSaveToCloud}
         />
 
         {floatingTabOpen && (
@@ -880,6 +902,12 @@ export default function Whiteboard({
             <MainMenu.Group>
               <MainMenu.DefaultItems.LoadScene />
               <MainMenu.DefaultItems.Export />
+              <MainMenu.Item
+                icon={<Save size={16} />}
+                onClick={handleSaveToCloud}
+              >
+                Save To Cloud
+              </MainMenu.Item>
               <MainMenu.DefaultItems.SaveAsImage />
               <MainMenu.DefaultItems.SearchMenu />
             </MainMenu.Group>

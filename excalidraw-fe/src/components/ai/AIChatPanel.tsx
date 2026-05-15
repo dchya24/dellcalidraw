@@ -40,10 +40,12 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
 
   // Initialize conversation when tab changes
   useEffect(() => {
-    const activeFile = getActiveFile();
-    if (!activeFile) return;
+    const activeFileFromEffect = getActiveFile();
+    if (!activeFileFromEffect) {
+      return;
+    }
 
-    const tabId = activeFile.activeTabId;
+    const tabId = activeFileFromEffect.activeTabId;
     if (tabId !== currentTabId) {
       setCurrentTabId(tabId);
       initConversation(tabId);
@@ -135,19 +137,43 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
         if (!excalidrawAPI) return;
 
         switch (event.type) {
-          case "text":
-            // Update assistant message with streaming text
-            addMessage(currentTabId, {
-              id: assistantMsgId,
-              role: "assistant",
-              content: event.content,
-              timestamp: Date.now(),
-            });
+          case "text": {
+            // Update the last message with accumulated text
+            // Use updateLastMessage instead of addMessage to avoid duplicate keys
+            const { conversations } = useAIChatStore.getState();
+            const msgs = conversations[currentTabId] || [];
+            const last = msgs[msgs.length - 1];
+            
+            if (last && last.role === "assistant" && last.id === assistantMsgId) {
+              // Update existing message with accumulated text
+              const accumulated = (last.content || "") + event.content;
+              addMessage(currentTabId, {
+                id: assistantMsgId,
+                role: "assistant",
+                content: accumulated,
+                timestamp: Date.now(),
+              });
+            } else {
+              // First text event - create message with this content
+              addMessage(currentTabId, {
+                id: assistantMsgId,
+                role: "assistant",
+                content: event.content,
+                timestamp: Date.now(),
+              });
+            }
             break;
+          }
 
           case "tool_call": {
             const args = (event.arguments || {}) as Record<string, unknown>;
             const toolName = event.name;
+
+            // Handle camera_update - just log it for now (viewport is auto-managed)
+            if (toolName === "camera_update") {
+              console.log("[AIChatPanel] Camera update requested:", args);
+              break;
+            }
 
             // Handle modify tools
             if (toolName === "move_elements") {
@@ -163,7 +189,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
               break;
             }
 
-            // Handle create tools — add to canvas immediately (streaming)
+            // Handle create tools — add to canvas immediately
             const element = generateElementFromTool(toolName, args);
             if (element) {
               const currentElements = excalidrawAPI.getSceneElements();
@@ -241,7 +267,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
   }
 
   return (
-    <div className="fixed bottom-16 right-4 w-96 h-[500px] max-h-[70vh] z-50 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+    <div className="fixed bottom-16 right-4 w-96 h-125 max-h-[70vh] z-50 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
       style={{
         background: "var(--bg-color, white)",
         border: "1px solid var(--border-color, #e5e7eb)",
@@ -265,14 +291,14 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
         <div className="flex items-center gap-1">
           <button
             onClick={() => currentTabId && clearConversation(currentTabId)}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
             title="Clear conversation"
           >
             <Trash2 size={14} />
           </button>
           <button
             onClick={togglePanel}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
           >
             <X size={18} />
           </button>
@@ -299,15 +325,15 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
               className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
                 msg.role === "user"
                   ? "bg-blue-500 text-white rounded-br-md"
-                  : "bg-gray-100 dark:bg-gray-800 rounded-bl-md"
+                  : "bg-gray-100 rounded-bl-md"
               }`}
             >
               <div className="flex items-start gap-2">
                 {msg.role === "assistant" && (
-                  <Bot size={14} className="mt-1 flex-shrink-0 opacity-60" />
+                  <Bot size={14} className="mt-1 shrink-0 opacity-60" />
                 )}
                 {msg.role === "user" && (
-                  <User size={14} className="mt-1 flex-shrink-0 opacity-80" />
+                  <User size={14} className="mt-1 shrink-0 opacity-80" />
                 )}
                 <div className="text-sm whitespace-pre-wrap">
                   {msg.content}
@@ -352,7 +378,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
                     setInputValue(prompt);
                     inputRef.current?.focus();
                   }}
-                  className="text-xs px-3 py-1.5 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  className="text-xs px-3 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
                 >
                   {prompt}
                 </button>
@@ -415,6 +441,16 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
 
 // ─── Element Generator from Tool Calls ───────────────────────────────────────
 
+interface LabelObject {
+  text: string;
+  fontSize?: number;
+}
+
+interface BindingObject {
+  elementId: string;
+  fixedPoint: [number, number];
+}
+
 function generateElementFromTool(
   toolName: string,
   args: Record<string, unknown>
@@ -431,121 +467,147 @@ function generateElementFromTool(
     boundElements: null,
     link: null,
     locked: false,
-    roundness: null,
   };
 
   switch (toolName) {
+    case "camera_update": {
+      // Camera update - handled separately, return null for elements
+      return null;
+    }
+
     case "create_rectangle": {
+      const label = args.label as LabelObject | undefined;
+      const roundness = args.roundness as { type: number } | undefined;
+      const fontSize = label?.fontSize || 18;
+      const text = label?.text || "";
+      
       return {
         ...base,
         type: "rectangle" as const,
         x: Number(args.x || 100),
         y: Number(args.y || 100),
-        width: Number(args.width || 120),
-        height: Number(args.height || 60),
+        width: Math.max(Number(args.width || 120), 120),
+        height: Math.max(Number(args.height || 60), 60),
         angle: 0,
-        strokeColor: String(args.strokeColor || "#000000"),
-        backgroundColor: String(args.backgroundColor || "#ffffff"),
-        fillStyle: "solid" as const,
-        strokeWidth: 1,
+        strokeColor: String(args.strokeColor || "#1e1e1e"),
+        backgroundColor: String(args.backgroundColor || "transparent"),
+        fillStyle: (args.fillStyle as "solid" | "hatching" | "cross-hatch") || "solid",
+        strokeWidth: Number(args.strokeWidth || 2),
         strokeStyle: "solid" as const,
-        roughness: 1,
-        opacity: 100,
-      } as unknown;
+        roughness: Number(args.roughness ?? 1),
+        opacity: Number(args.opacity ?? 100),
+        roundness: roundness ? { type: roundness.type } : null,
+        label: text ? { text, fontSize } : undefined,
+      };
     }
 
     case "create_text": {
+      const fontSize = Number(args.fontSize || 20);
+      const text = String(args.text || "");
+      const width = Math.max(text.length * fontSize * 0.6, 100);
+      
       return {
         ...base,
         type: "text" as const,
         x: Number(args.x || 100),
         y: Number(args.y || 100),
-        width: 200,
-        height: 30,
+        width,
+        height: fontSize * 1.4,
         angle: 0,
-        strokeColor: String(args.strokeColor || "#000000"),
+        strokeColor: String(args.strokeColor || "#1e1e1e"),
         backgroundColor: "transparent",
         fillStyle: "solid" as const,
         strokeWidth: 0,
         strokeStyle: "solid" as const,
         roughness: 0,
         opacity: 100,
-        text: String(args.text || ""),
-        fontSize: Number(args.fontSize || 16),
-      } as unknown;
+        fontSize,
+        text,
+      };
     }
 
     case "create_arrow": {
+      const label = args.label as LabelObject | undefined;
+      const startBinding = args.startBinding as BindingObject | undefined;
+      const endBinding = args.endBinding as BindingObject | undefined;
+      
+      const startX = Number(args.startX || 0);
+      const startY = Number(args.startY || 0);
+      const endX = Number(args.endX || 100);
+      const endY = Number(args.endY || 50);
+      
       return {
         ...base,
         type: "arrow" as const,
-        x: Number(args.startX || 0),
-        y: Number(args.startY || 0),
-        width: Math.abs(Number(args.endX || 100) - Number(args.startX || 0)),
-        height: Math.abs(Number(args.endY || 50) - Number(args.startY || 0)),
+        x: Math.min(startX, endX),
+        y: Math.min(startY, endY),
+        width: Math.abs(endX - startX),
+        height: Math.abs(endY - startY),
         angle: 0,
-        strokeColor: String(args.strokeColor || "#000000"),
+        strokeColor: String(args.strokeColor || "#1e1e1e"),
         backgroundColor: "transparent",
         fillStyle: "solid" as const,
-        strokeWidth: 1,
-        strokeStyle: "solid" as const,
+        strokeWidth: Number(args.strokeWidth || 2),
+        strokeStyle: (args.strokeStyle as "solid" | "dashed" | "dotted") || "solid",
         roughness: 1,
         opacity: 100,
-        points: [
-          [0, 0] as [number, number],
-          [
-            Number(args.endX || 100) - Number(args.startX || 0),
-            Number(args.endY || 50) - Number(args.startY || 0),
-          ] as [number, number],
-        ],
+        points: [[0, 0], [endX - startX, endY - startY]] as [number, number][],
         lastCommittedPoint: null,
-        startBinding: null,
-        endBinding: null,
-        startArrowhead: null,
-        endArrowhead: "arrow" as const,
-      } as unknown;
+        startBinding: startBinding || null,
+        endBinding: endBinding || null,
+        startArrowhead: (args.startArrowhead as "arrow" | "bar" | "dot" | "triangle" | null) || null,
+        endArrowhead: (args.endArrowhead as "arrow" | "bar" | "dot" | "triangle" | null) || "arrow",
+        label: label ? { text: label.text, fontSize: label.fontSize || 14 } : undefined,
+      };
     }
 
     case "create_ellipse": {
+      const label = args.label as LabelObject | undefined;
+      
       return {
         ...base,
         type: "ellipse" as const,
         x: Number(args.x || 100),
         y: Number(args.y || 100),
-        width: Number(args.width || 100),
-        height: Number(args.height || 60),
+        width: Math.max(Number(args.width || 120), 120),
+        height: Math.max(Number(args.height || 60), 60),
         angle: 0,
-        strokeColor: String(args.strokeColor || "#000000"),
-        backgroundColor: String(args.backgroundColor || "#ffffff"),
-        fillStyle: "solid" as const,
-        strokeWidth: 1,
+        strokeColor: String(args.strokeColor || "#1e1e1e"),
+        backgroundColor: String(args.backgroundColor || "transparent"),
+        fillStyle: (args.fillStyle as "solid" | "hatching" | "cross-hatch") || "solid",
+        strokeWidth: Number(args.strokeWidth || 2),
         strokeStyle: "solid" as const,
         roughness: 1,
-        opacity: 100,
-      } as unknown;
+        opacity: Number(args.opacity ?? 100),
+        label: label ? { text: label.text, fontSize: label.fontSize || 18 } : undefined,
+      };
     }
 
     case "create_diamond": {
+      const label = args.label as LabelObject | undefined;
+      
       return {
         ...base,
         type: "diamond" as const,
         x: Number(args.x || 100),
         y: Number(args.y || 100),
-        width: Number(args.width || 100),
-        height: Number(args.height || 60),
+        width: Math.max(Number(args.width || 120), 120),
+        height: Math.max(Number(args.height || 80), 80),
         angle: 0,
-        strokeColor: String(args.strokeColor || "#000000"),
-        backgroundColor: String(args.backgroundColor || "#ffffff"),
-        fillStyle: "solid" as const,
-        strokeWidth: 1,
+        strokeColor: String(args.strokeColor || "#1e1e1e"),
+        backgroundColor: String(args.backgroundColor || "transparent"),
+        fillStyle: (args.fillStyle as "solid" | "hatching" | "cross-hatch") || "solid",
+        strokeWidth: Number(args.strokeWidth || 2),
         strokeStyle: "solid" as const,
         roughness: 1,
-        opacity: 100,
-      } as unknown;
+        opacity: Number(args.opacity ?? 100),
+        label: label ? { text: label.text, fontSize: label.fontSize || 16 } : undefined,
+      };
     }
 
     case "create_line": {
       const rawPoints = args.points as [number, number][] || [[0, 0], [100, 0]];
+      
       return {
         ...base,
         type: "line" as const,
@@ -554,11 +616,11 @@ function generateElementFromTool(
         width: 100,
         height: 0,
         angle: 0,
-        strokeColor: String(args.strokeColor || "#000000"),
+        strokeColor: String(args.strokeColor || "#1e1e1e"),
         backgroundColor: "transparent",
         fillStyle: "solid" as const,
-        strokeWidth: 1,
-        strokeStyle: "solid" as const,
+        strokeWidth: Number(args.strokeWidth || 2),
+        strokeStyle: (args.strokeStyle as "solid" | "dashed" | "dotted") || "solid",
         roughness: 1,
         opacity: 100,
         points: rawPoints.map((p, i) =>
@@ -567,9 +629,32 @@ function generateElementFromTool(
         lastCommittedPoint: null,
         startBinding: null,
         endBinding: null,
-        startArrowhead: null,
-        endArrowhead: null,
-      } as unknown;
+        startArrowhead: (args.startArrowhead as "arrow" | "bar" | "dot" | "triangle" | null) || null,
+        endArrowhead: (args.endArrowhead as "arrow" | "bar" | "dot" | "triangle" | null) || null,
+      };
+    }
+
+    case "create_zone": {
+      const label = args.label as LabelObject | undefined;
+      
+      return {
+        ...base,
+        type: "rectangle" as const,
+        x: Number(args.x || 0),
+        y: Number(args.y || 0),
+        width: Number(args.width || 800),
+        height: Number(args.height || 600),
+        angle: 0,
+        strokeColor: String(args.strokeColor || "#b0b0b0"),
+        backgroundColor: String(args.backgroundColor || "#dbe4ff"),
+        fillStyle: "solid" as const,
+        strokeWidth: Number(args.strokeWidth || 1),
+        strokeStyle: "solid" as const,
+        roughness: 0,
+        opacity: Number(args.opacity ?? 35),
+        roundness: { type: 3 },
+        label: label ? { text: label.text, fontSize: label.fontSize || 16 } : undefined,
+      };
     }
 
     default:

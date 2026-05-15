@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -27,41 +28,50 @@ func NewHandler(provider LLMProvider) *Handler {
 
 // RegisterRoutes registers AI routes
 func (h *Handler) RegisterRoutes(r chi.Router) {
-	r.Group(func(r chi.Router) {
-		r.Post("/chat", h.HandleChat)
-		r.Get("/models", h.HandleModels)
-		r.Get("/health", h.HandleHealth)
-	})
+	r.Post("/chat", h.HandleChat)
+	r.Get("/models", h.HandleModels)
+	r.Get("/health", h.HandleHealth)
 }
 
 // HandleChat handles AI chat requests with SSE streaming
 func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
-	// Parse request
+	// Set SSE headers BEFORE anything else
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
+	w.Header().Set("Access-Control-Allow-Origin", "*") // Allow all origins for SSE
+
+	// Write a 200 OK status so the client sees a successful response
+	w.WriteHeader(http.StatusOK)
+
+	// Flush headers to client immediately
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	// Parse request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Failed to read request", http.StatusBadRequest)
+		slog.Error("[AI Handler] Failed to read request body", "error", err)
+		fmt.Fprintf(w, "data: {\"type\":\"error\",\"content\":\"Failed to read request\"}\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
 		return
 	}
 
 	var req ChatRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "Invalid request JSON", http.StatusBadRequest)
+		slog.Error("[AI Handler] Failed to parse request", "error", err)
+		fmt.Fprintf(w, "data: {\"type\":\"error\",\"content\":\"Invalid request JSON\"}\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
 		return
 	}
 
-	// Set headers for SSE
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "SSE not supported", http.StatusInternalServerError)
-		return
-	}
-
-	// Build messages
+	// Build canvas context
 	canvasElements := []interface{}{}
 	if req.CanvasContext != nil {
 		if elements, ok := req.CanvasContext["elements"].([]interface{}); ok {
@@ -74,48 +84,61 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		{Role: "user", Content: req.Message},
 	}
 
-	model := req.Model
-	if model == "" {
-		model = "gpt-4o"
-	}
+	// Model comes from server config only — ignore frontend model param
+	model := h.provider.DefaultModel()
+	slog.Info("[AI Handler] Processing chat request", "message", req.Message, "model", model, "canvas_elements", len(canvasElements))
 
-	// Stream response
+	// Stream response via SSE
 	ctx := r.Context()
 	sendEvent := func(event SSEEvent) error {
-		data, _ := json.Marshal(event)
-		_, err := fmt.Fprintf(w, "data: %s\n\n", string(data))
-		if err == nil {
-			flusher.Flush()
+		data, err := json.Marshal(event)
+		if err != nil {
+			return fmt.Errorf("marshal event: %w", err)
 		}
-		return err
+		// Use fmt.Fprintf with explicit flush
+		_, err = fmt.Fprintf(w, "data: %s\n\n", data)
+		if err != nil {
+			slog.Warn("[AI Handler] Failed to write SSE data", "error", err)
+			return err
+		}
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		return nil
 	}
 
-	err = h.provider.ChatStream(ctx, messages, h.tools, model, sendEvent)
-	if err != nil {
-		// Send error event
+	// Stream with immediate feedback
+	slog.Info("[AI Handler] Starting AI stream...")
+	if err := h.provider.ChatStream(ctx, messages, h.tools, model, sendEvent); err != nil {
+		slog.Error("[AI Handler] AI stream error", "error", err)
 		if !strings.Contains(err.Error(), "context canceled") {
-			sendEvent(SSEEvent{
+			_ = sendEvent(SSEEvent{
 				Type:    "error",
-				Content: err.Error(),
+				Content: fmt.Sprintf("AI provider error: %v", err),
 			})
 		}
 		return
 	}
 
-	// Send done event
-	sendEvent(SSEEvent{
+	// Send done event with final flush
+	slog.Info("[AI Handler] AI stream complete, sending done event")
+	_ = sendEvent(SSEEvent{
 		Type:    "done",
 		Content: "Generation complete",
 	})
+
+	// Final flush to ensure all data is sent
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // HandleModels returns available models
 func (h *Handler) HandleModels(w http.ResponseWriter, r *http.Request) {
-	models := h.provider.GetModels()
-	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"models": models,
+		"models":       h.provider.GetModels(),
+		"activeModel":  h.provider.DefaultModel(),
 	})
 }
 
@@ -123,98 +146,10 @@ func (h *Handler) HandleModels(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "ok",
-		"models":  h.provider.GetModels(),
+		"status":      "ok",
+		"models":      h.provider.GetModels(),
+		"activeModel": h.provider.DefaultModel(),
 	})
-}
-
-// SendSSENotice sends a notice message (non-streaming fallback)
-func SendSSENotice(w http.ResponseWriter, message string) error {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		return fmt.Errorf("flusher not available")
-	}
-	
-		data, _ := json.Marshal(SSEEvent{
-		Type:    "text",
-		Content: message,
-	})
-	
-	fmt.Fprintf(w, "data: %s\n\n", string(data))
-	flusher.Flush()
-	return nil
-}
-
-// SendSSEError sends an error event
-func SendSSEError(w http.ResponseWriter, message string) error {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		return fmt.Errorf("flusher not available")
-	}
-	
-	data, _ := json.Marshal(SSEEvent{
-		Type:    "error",
-		Content: message,
-	})
-	
-	fmt.Fprintf(w, "data: %s\n\n", string(data))
-	flusher.Flush()
-	return nil
-}
-
-// ValidateAPIKey validates the API key is configured
-func (h *Handler) ValidateAPIKey() bool {
-	return h.provider != nil
-}
-
-// GetTools returns available tools
-func (h *Handler) GetTools() []Tool {
-	return h.tools
-}
-
-// GetProvider returns the LLM provider
-func (h *Handler) GetProvider() LLMProvider {
-	return h.provider
-}
-
-// ExecuteTool executes a tool based on name and arguments
-func ExecuteTool(name string, args map[string]interface{}) ToolResult {
-	switch name {
-	case "create_rectangle", "create_text", "create_arrow", 
-	     "create_ellipse", "create_diamond", "create_line":
-		return ToolResult{
-			Success: true,
-			Result: map[string]interface{}{
-				"type":       name,
-				"id":         fmt.Sprintf("el_%d", len(args)),
-				"x":          args["x"],
-				"y":          args["y"],
-				"width":      args["width"],
-				"height":     args["height"],
-				"strokeColor": "#000000",
-				"backgroundColor": "#ffffff",
-			},
-		}
-	case "get_canvas_state":
-		return ToolResult{
-			Success: true,
-			Result: map[string]interface{}{
-				"elementCount": 0,
-				"message":      "Canvas state retrieved",
-			},
-		}
-	default:
-		return ToolResult{
-			Success: false,
-			Error:   fmt.Sprintf("Unknown tool: %s", name),
-		}
-	}
 }
 
 // Context key for request ID

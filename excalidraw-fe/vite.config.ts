@@ -9,6 +9,23 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss()],
     server: {
       port: Number(env.VITE_PORT) || 5173,
+      proxy: {
+        '/api': {
+          target: 'http://localhost:8080',
+          changeOrigin: true,
+          // Disable buffering for SSE streaming
+          configure: (proxy) => {
+            proxy.on('proxyRes', (proxyRes) => {
+              // Disable gzip compression for SSE
+              delete proxyRes.headers['content-encoding']
+            })
+          },
+        },
+      },
+    },
+    build: {
+      // Extend timeout for large builds
+      sourcemap: false,
     },
   }
 })

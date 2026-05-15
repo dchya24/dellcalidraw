@@ -209,7 +209,20 @@ func main() {
 
 	// AI routes (optional, only if configured)
 	if aiHandler != nil {
-		aiHandler.RegisterRoutes(r)
+		r.Route("/api/ai", func(r chi.Router) {
+			// Remove write deadline for SSE streaming (AI chat can take time)
+			r.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// Try to remove write deadline for SSE
+					if rc, ok := w.(interface{ SetWriteDeadline(time.Time) error }); ok {
+						rc.SetWriteDeadline(time.Time{})
+					}
+					_ = w // avoid unused warning
+					next.ServeHTTP(w, r)
+				})
+			})
+			aiHandler.RegisterRoutes(r)
+		})
 	}
 
 	// Start server
@@ -217,7 +230,7 @@ func main() {
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      r,
 		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
+		WriteTimeout: 5 * time.Minute, // Extended for SSE streaming (AI chat can take time)
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
 

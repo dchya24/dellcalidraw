@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 )
@@ -114,6 +115,8 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []T
 	}
 
 	reqURL := fmt.Sprintf("%s/chat/completions", strings.TrimSuffix(p.BaseURL, "/"))
+	slog.Info("[OpenAI] Sending request", "url", reqURL, "model", model, "messages", len(messages))
+
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -122,11 +125,16 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []T
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+p.APIKey)
 
+	slog.Info("[OpenAI] Making HTTP request to", "url", reqURL)
+
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
+		slog.Error("[OpenAI] HTTP request failed", "error", err)
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
+
+	slog.Info("[OpenAI] Response status", "status", resp.StatusCode)
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -134,8 +142,11 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []T
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		slog.Error("[OpenAI] API error", "status", resp.StatusCode, "body", string(respBody))
 		return nil, fmt.Errorf("OpenAI API error (%d): %s", resp.StatusCode, string(respBody))
 	}
+
+	slog.Info("[OpenAI] Full response body:", "length", len(respBody), "body", string(respBody))
 
 	var openAIResp openAIResponse
 	if err := json.Unmarshal(respBody, &openAIResp); err != nil {
@@ -204,7 +215,10 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	// Log shortened request for debugging
 	reqURL := fmt.Sprintf("%s/chat/completions", strings.TrimSuffix(p.BaseURL, "/"))
+	slog.Info("[AI] Request", "url", reqURL, "model", model, "msgs", len(messages), "tools", len(tools))
+
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -213,23 +227,37 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+p.APIKey)
 
+	slog.Info("[AI] Sending request to AI provider...")
+
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
+		slog.Error("[OpenAI Stream] HTTP request failed", "error", err)
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	slog.Info("[AI] Response status", "status", resp.StatusCode)
+
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
+		slog.Error("[OpenAI Stream] API error", "status", resp.StatusCode)
+		slog.Info("[OpenAI Stream] ===== FULL ERROR RESPONSE =====")
+		slog.Info("[OpenAI Stream] Error body:", "body", string(respBody))
+		slog.Info("[OpenAI Stream] ================================")
 		return fmt.Errorf("OpenAI API error (%d): %s", resp.StatusCode, string(respBody))
 	}
 
-	// Track pending tool calls (OpenAI streams arguments incrementally)
+	slog.Info("[OpenAI Stream] Starting to stream response...")
+	
+	// Track response for logging (pre-allocate)
+	var fullResponse strings.Builder
+	fullResponse.Grow(4096)
+	
+	// Stream directly from response body (don't read it first!)
 	pendingCalls := make(map[int]*pendingToolCall)
-
-	reader := io.Reader(resp.Body)
 	lineBuf := make([]byte, 0, 4096)
 	buf := make([]byte, 4096)
+	reader := resp.Body
 
 	for {
 		n, readErr := reader.Read(buf)
@@ -261,6 +289,9 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 					continue
 				}
 
+				// Log each SSE event
+				fullResponse.WriteString(data + "\n")
+				
 				if err := p.processStreamChunk(data, pendingCalls, streamFunc); err != nil {
 					return err
 				}
@@ -273,6 +304,14 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 			}
 			return readErr
 		}
+	}
+
+	// Log response summary (not full content)
+	respStr := fullResponse.String()
+	if len(respStr) > 200 {
+		slog.Info("[AI] Response preview", "data", respStr[:200]+"...")
+	} else if len(respStr) > 0 {
+		slog.Info("[AI] Response data", "data", respStr)
 	}
 
 	// Flush any remaining
@@ -399,6 +438,11 @@ func flushToolCall(pc *pendingToolCall, streamFunc func(SSEEvent) error) error {
 // GetModels implements LLMProvider.GetModels
 func (p *OpenAIProvider) GetModels() []string {
 	return SupportedModels()
+}
+
+// DefaultModel returns the configured model from env
+func (p *OpenAIProvider) DefaultModel() string {
+	return p.Model
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

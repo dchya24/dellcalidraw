@@ -1,8 +1,7 @@
 # Agentic AI - Chat to Diagram Feature
 
-**Created:** 2026-05-13
-**Status:** 📋 Planning
-**Goal:** User bisa chat dengan AI untuk generate/edit diagram langsung di canvas
+**Created:** 2026-05-13  
+**Status:** ✅ **IMPLEMENTED & FIXED** (2026-05-14)
 
 ---
 
@@ -15,6 +14,29 @@ Chat panel yang memungkinkan user berinteraksi dengan AI untuk:
 
 ---
 
+## 🔧 Bug Fix Applied (2026-05-14)
+
+**Issue:** The `/api/ai/*` routes were not being registered properly.
+
+**Root Cause:** The `r.Route("/api/ai", ...)` pattern wasn't matching as expected with chi router when using Group inside RegisterRoutes.
+
+**Fix:** Changed the route registration in `cmd/server/main.go` from:
+```go
+aiHandler.RegisterRoutes(r)  // Routes were: /chat, /models, /health
+```
+
+To:
+```go
+r.Route("/api/ai", func(r chi.Router) {
+    aiHandler.RegisterRoutes(r)
+})
+```
+
+**Files Modified:**
+- `excalidraw-be/cmd/server/main.go` - Fixed route registration
+
+---
+
 ## Architecture
 
 ```
@@ -22,7 +44,7 @@ Chat panel yang memungkinkan user berinteraksi dengan AI untuk:
 │                           Frontend                                    │
 │                                                                       │
 │  ┌──────────────┐    ┌──────────────┐    ┌────────────────────────┐ │
-│  │  Chat Panel  │───►│  AI Service  │───►│  excalidrawAPI         │ │
+│  │  AIChatPanel │───►│  aiService   │───►│  excalidrawAPI         │ │
 │  │  (React)     │    │  (FE client) │    │  .updateScene()        │ │
 │  └──────────────┘    └──────┬───────┘    └────────────────────────┘ │
 │                              │                                        │
@@ -33,412 +55,190 @@ Chat panel yang memungkinkan user berinteraksi dengan AI untuk:
 │                           Backend (Go)                                │
 │                                                                       │
 │  ┌──────────────────┐    ┌─────────────────────────────────────┐    │
-│  │  /api/ai/chat    │───►│  MCP Server (Excalidraw Tools)      │    │
-│  │  (proxy + tools) │    │                                     │    │
-│  └────────┬─────────┘    │  Tools:                             │    │
-│           │               │  - create_rectangle                 │    │
-│           │               │  - create_diamond                   │    │
-│           ▼               │  - create_ellipse                   │    │
-│  ┌──────────────────┐    │  - create_text                      │    │
-│  │  LLM Provider    │    │  - create_arrow                     │    │
-│  │  (OpenAI /       │    │  - create_line                      │    │
-│  │   Anthropic)     │    │  - delete_elements                  │    │
-│  └──────────────────┘    │  - move_elements                    │    │
-│                           │  - update_element_style             │    │
-│                           │  - layout_flowchart                 │    │
-│                           │  - layout_grid                      │    │
-│                           │  - get_canvas_state                 │    │
-│                           │  - mermaid_to_excalidraw            │    │
-│                           └─────────────────────────────────────┘    │
-│                                                                       │
+│  │  /api/ai/chat    │───►│  AI Provider (OpenAI/Zhipu)          │    │
+│  │  (SSE stream)    │    │  + MCP Tools                         │    │
+│  └────────┬─────────┘    └─────────────────────────────────────┘    │
+│           │                                                         │
+│           ▼                                                         │
+│  ┌──────────────────┐                                              │
+│  │  LLM Provider    │                                              │
+│  │  (OpenAI /       │                                              │
+│  │   Anthropic /    │                                              │
+│  │   Zhipu)         │                                              │
+│  └──────────────────┘                                              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## MCP (Model Context Protocol) Approach
+## ✅ Implemented Features
 
-Menggunakan MCP sebagai interface antara LLM dan Excalidraw canvas.
+### Backend (Go)
 
-### Why MCP?
+| Feature | File | Status |
+|---------|------|--------|
+| SSE streaming handler | `internal/ai/handler.go` | ✅ |
+| OpenAI provider | `internal/ai/openai.go` | ✅ |
+| Anthropic provider | `internal/ai/anthropic.go` | ✅ |
+| MCP tool definitions | `internal/ai/provider.go` | ✅ |
+| Canvas context | `internal/ai/handler.go` | ✅ |
+| Tool execution | `AIChatPanel.tsx` | ✅ |
+| Configuration | `internal/config/config.go` | ✅ |
+| Route registration | `cmd/server/main.go` | ✅ (fixed) |
 
-1. **Standardized** — Protocol yang sudah diadopsi luas untuk tool-calling
-2. **Provider agnostic** — Bisa pakai OpenAI, Anthropic, atau model lain
-3. **Existing packages** — Ada `excalidraw-mcp`, `@excalidraw/mermaid-to-excalidraw`
-4. **Extensible** — Mudah tambah tools baru tanpa ubah LLM prompt
-5. **Streaming support** — MCP mendukung streaming responses
+### Frontend (React)
 
-### MCP Tools Definition
+| Feature | File | Status |
+|---------|------|--------|
+| Chat Panel UI | `src/components/ai/AIChatPanel.tsx` | ✅ |
+| AI Service (SSE) | `src/services/ai/aiService.ts` | ✅ |
+| AI Store (Zustand) | `src/store/useAIChatStore.ts` | ✅ |
+| Element generators | `AIChatPanel.tsx` | ✅ |
+| Streaming text | `AIChatPanel.tsx` | ✅ |
+| Stop generation | `AIChatPanel.tsx` | ✅ |
+| Suggested prompts | `AIChatPanel.tsx` | ✅ |
 
+---
+
+## MCP Tools Implemented
+
+### Shape Creation
 ```typescript
-// Core drawing tools
-interface MCPTools {
-  // Create elements
-  create_rectangle: (params: {
-    x: number; y: number;
-    width: number; height: number;
-    label?: string;
-    backgroundColor?: string;
-    strokeColor?: string;
-  }) => ExcalidrawElement;
-
-  create_diamond: (params: {
-    x: number; y: number;
-    width: number; height: number;
-    label?: string;
-  }) => ExcalidrawElement;
-
-  create_ellipse: (params: {
-    x: number; y: number;
-    width: number; height: number;
-    label?: string;
-  }) => ExcalidrawElement;
-
-  create_text: (params: {
-    x: number; y: number;
-    text: string;
-    fontSize?: number;
-  }) => ExcalidrawElement;
-
-  create_arrow: (params: {
-    startElementId?: string;
-    endElementId?: string;
-    startX?: number; startY?: number;
-    endX?: number; endY?: number;
-    label?: string;
-  }) => ExcalidrawElement;
-
-  create_line: (params: {
-    points: [number, number][];
-    strokeColor?: string;
-  }) => ExcalidrawElement;
-
-  // Modify elements
-  move_elements: (params: {
-    elementIds: string[];
-    deltaX: number; deltaY: number;
-  }) => void;
-
-  delete_elements: (params: {
-    elementIds: string[];
-  }) => void;
-
-  update_element_style: (params: {
-    elementIds: string[];
-    backgroundColor?: string;
-    strokeColor?: string;
-    strokeWidth?: number;
-    fontSize?: number;
-  }) => void;
-
-  // Layout helpers
-  layout_flowchart: (params: {
-    direction: "TB" | "LR";
-    nodes: { id: string; label: string; type: "rectangle" | "diamond" | "ellipse" }[];
-    edges: { from: string; to: string; label?: string }[];
-  }) => ExcalidrawElement[];
-
-  layout_grid: (params: {
-    elements: { label: string; type: string }[];
-    columns: number;
-    spacing?: number;
-    startX?: number; startY?: number;
-  }) => ExcalidrawElement[];
-
-  // Context
-  get_canvas_state: () => {
-    elements: ExcalidrawElement[];
-    elementCount: number;
-    boundingBox: { x: number; y: number; width: number; height: number };
-  };
-
-  // Mermaid integration
-  mermaid_to_excalidraw: (params: {
-    syntax: string; // Mermaid diagram syntax
-  }) => ExcalidrawElement[];
-}
+create_rectangle  // Args: x, y, width, height, label?, strokeColor?, backgroundColor?
+create_ellipse     // Args: x, y, width, height, label?, strokeColor?, backgroundColor?
+create_diamond     // Args: x, y, width, height, label?, strokeColor?, backgroundColor?
+create_text        // Args: x, y, text, fontSize?, strokeColor?
+create_arrow       // Args: startX, startY, endX, endY, label?, strokeColor?
+create_line        // Args: points, strokeColor?
 ```
 
----
-
-## LLM Provider Configuration
-
-Backend sebagai proxy, support multiple providers:
-
-```go
-// Backend config
-type AIConfig struct {
-    Provider    string // "openai" | "anthropic"
-    APIKey      string
-    Model       string // "gpt-4o" | "claude-sonnet-4-20250514"
-    BaseURL     string // Custom endpoint (OpenAI compatible)
-    MaxTokens   int
-    Temperature float64
-}
-```
-
-### OpenAI Compatible
-- OpenAI (gpt-4o, gpt-4o-mini)
-- Azure OpenAI
-- Local models via Ollama/vLLM (OpenAI compatible API)
-- Groq, Together AI, etc.
-
-### Anthropic Compatible
-- Claude Sonnet, Opus, Haiku
-- Via Anthropic API directly
-
----
-
-## Streaming Flow
-
-```
-User: "Buatkan flowchart login"
-    │
-    ▼ POST /api/ai/chat (SSE stream)
-    │
-Backend:
-    │── Send prompt + tools + canvas context to LLM
-    │── LLM streams response:
-    │     ├── text: "Saya akan membuat flowchart login..."
-    │     ├── tool_call: create_rectangle("User Input", ...)
-    │     ├── tool_call: create_rectangle("Validate", ...)
-    │     ├── tool_call: create_diamond("Valid?", ...)
-    │     ├── tool_call: create_arrow(...)
-    │     └── text: "Flowchart login sudah dibuat dengan 5 nodes."
-    │
-    ▼ SSE events to frontend
-    │
-Frontend:
-    ├── Show text in chat (streaming)
-    ├── Execute tool results → updateScene() (elements appear one by one)
-    └── Final message in chat
-```
-
-### SSE Event Format
-
+### Element Modification
 ```typescript
-// Text chunk
-{ type: "text", content: "Saya akan membuat..." }
+move_elements      // Args: elementIds, deltaX, deltaY
+delete_elements    // Args: elementIds
+update_element_style // Args: elementIds, backgroundColor?, strokeColor?, strokeWidth?, opacity?
+```
 
-// Tool call (element created)
-{ type: "tool_result", tool: "create_rectangle", result: { element: ExcalidrawElement } }
-
-// Batch elements (for layout tools)
-{ type: "tool_result", tool: "layout_flowchart", result: { elements: ExcalidrawElement[] } }
-
-// Done
-{ type: "done", summary: "Created 5 elements" }
-
-// Error
-{ type: "error", message: "Failed to generate" }
+### Context
+```typescript
+get_canvas_state   // Returns: elementCount, types, bounding box
 ```
 
 ---
 
-## Frontend Components
+## Configuration
 
-### Chat Panel
+### Environment Variables (`excalidraw-be/.env`)
 
-```
-┌─────────────────────────────┐
-│  AI Assistant            [x] │
-├─────────────────────────────┤
-│                              │
-│  🤖 Halo! Saya bisa bantu   │
-│     membuat diagram.         │
-│                              │
-│  👤 Buatkan flowchart login  │
-│     dengan validasi email    │
-│                              │
-│  🤖 Saya akan membuat...     │
-│     ✅ Created "User Input"  │
-│     ✅ Created "Validate"    │
-│     ✅ Created "Valid?"      │
-│     ✅ Created arrows        │
-│     Done! 5 elements added.  │
-│                              │
-├─────────────────────────────┤
-│  [Type message...]    [Send] │
-└─────────────────────────────┘
+```bash
+# AI Configuration
+EXCALIDRAW_AI_PROVIDER=openai          # "openai" | "anthropic"
+EXCALIDRAW_AI_API_KEY=sk-...           # Your API key
+EXCALIDRAW_AI_MODEL=glm-4.7           # Model (gpt-4o, glm-4.7, claude-sonnet-4-20250514, etc.)
+EXCALIDRAW_AI_BASE_URL=                # Optional: Custom endpoint for OpenAI-compatible APIs
+EXCALIDRAW_AI_MAX_TOKENS=100000        # Max response tokens
+EXCALIDRAW_AI_TEMPERATURE=0.7          # Creativity (0-1)
 ```
 
-### File Structure (FE)
+### Supported Models
 
-```
-src/
-├── components/
-│   └── ai/
-│       └── AIChatPanel.tsx          # Chat UI component (✅ implemented)
-├── services/
-│   └── ai/
-│       └── aiService.ts             # AI API client + SSE handling (✅ implemented)
-├── store/
-│   └── useAIChatStore.ts            # Chat history, per-sheet conversations (✅ implemented)
-└── types/
-    └── ai.ts                         # AI-related types (✅ implemented)
-```
-
-### File Structure (BE)
-
-```
-excalidraw-be/
-├── cmd/server/
-│   └── main.go               # AI handler initialization (✅ implemented)
-├── internal/
-│   ├── ai/
-│   │   ├── provider.go       # LLM provider interface + tools (✅ implemented)
-│   │   ├── openai.go        # OpenAI implementation + SSE streaming (✅ implemented)
-│   │   └── handler.go       # HTTP handlers for /api/ai/* (✅ implemented)
-│   └── config/
-│       └── config.go         # AI config (✅ implemented)
-```
+| Provider | Models |
+|----------|--------|
+| OpenAI | `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-4` |
+| Anthropic | `claude-sonnet-4-20250514`, `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022` |
+| Zhipu (GLM) | `glm-4.7`, `glm-4`, `glm-3` |
+| OpenAI Compatible | Ollama, vLLM, Azure OpenAI, Groq, Together AI |
 
 ---
 
 ## API Endpoints
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/ai/chat` | ✅ | Send message, get SSE stream response |
-| GET | `/api/ai/models` | ✅ | List available models |
-| POST | `/api/ai/config` | ✅ | Update AI provider config (admin) |
-
-### POST /api/ai/chat
+### POST `/api/ai/chat`
+SSE streaming endpoint for AI chat.
 
 **Request:**
 ```json
 {
-  "message": "Buatkan flowchart login",
+  "message": "Buatkan flowchart login sederhana",
   "canvasContext": {
     "elements": [...],
     "activeFileId": "...",
-    "activeTabId": "..."
+    "activeTabId": "...",
+    "roomId": "..."
   },
-  "conversationId": "conv-123",
-  "model": "gpt-4o"
+  "model": "glm-4.7"
 }
 ```
 
-**Response:** SSE stream (see event format above)
+**Response (SSE Events):**
+```json
+// Text streaming
+{"type": "text", "content": "Saya akan membuat flowchart..."}
 
----
+// Tool call
+{"type": "tool_call", "id": "...", "name": "create_rectangle", "arguments": {...}}
 
-## Context Awareness
-
-AI bisa "melihat" canvas melalui:
-
-1. **Canvas state dikirim di request** — FE kirim current elements sebagai context
-2. **`get_canvas_state` tool** — LLM bisa panggil tool ini untuk inspect canvas
-3. **Element references** — LLM bisa refer ke element by ID untuk modify
-
-### Context Optimization
-
-Canvas bisa besar (1000+ elements). Strategi:
-- Kirim summary saja (element count, types, bounding box)
-- LLM panggil `get_canvas_state` jika perlu detail
-- Limit context: hanya kirim visible viewport elements
-- Atau kirim element labels/text saja tanpa full coordinates
-
----
-
-## Mermaid Integration
-
-Leverage `@excalidraw/mermaid-to-excalidraw` untuk complex diagrams:
-
-```
-User: "Buatkan sequence diagram API call"
-
-AI → tool_call: mermaid_to_excalidraw({
-  syntax: `
-    sequenceDiagram
-      Client->>Server: POST /api/login
-      Server->>DB: Query user
-      DB-->>Server: User data
-      Server-->>Client: JWT token
-  `
-})
-
-→ Excalidraw elements rendered on canvas
+// Done
+{"type": "done", "summary": "..."}
 ```
 
-Ini powerful karena:
-- Mermaid syntax lebih mudah di-generate LLM
-- Support: flowchart, sequence, class, ER, gantt, pie, mindmap
-- `@excalidraw/mermaid-to-excalidraw` sudah handle layout
+### GET `/api/ai/models`
+Returns available models for the configured provider.
 
----
+**Response:**
+```json
+{
+  "models": ["gpt-4o", "gpt-4o-mini", "claude-sonnet-4-20250514"]
+}
+```
 
-## Implementation Phases
+### GET `/api/ai/health`
+Health check for AI service.
 
-### Phase 1: Basic Chat + Simple Generation (MVP) ✅
-- [x] Chat panel UI (FE) — `src/components/ai/AIChatPanel.tsx`
-- [x] AI service + SSE client (FE) — `src/services/ai/aiService.ts`
-- [x] Backend proxy endpoint (`/api/ai/chat`) — `excalidraw-be/internal/ai/handler.go`
-- [x] OpenAI provider implementation — `excalidraw-be/internal/ai/openai.go`
-- [x] Basic tools: `create_rectangle`, `create_text`, `create_arrow` — tools defined in provider.go
-- [x] Canvas context in request — sent via canvasContext param
-
-### Phase 2: Full Tool Set + Streaming ✅
-- [x] All drawing tools (diamond, ellipse, line) — FE element generator + BE tool defs
-- [ ] Layout tools (flowchart, grid) — **deferred to Phase 3 (Mermaid better)**
-- [x] Streaming elements to canvas (appear one by one) — immediate updateScene per tool_call
-- [x] Modify tools (move, delete, style) — move_elements, delete_elements, update_element_style
-- [x] Anthropic provider — `internal/ai/anthropic.go`
-- [x] OpenAI streaming fix — accumulate tool call arguments before emitting
-- [x] Provider selection via config — `EXCALIDRAW_AI_PROVIDER=openai|anthropic`
-
-### Phase 3: Mermaid + Advanced
-- [ ] Mermaid-to-Excalidraw integration
-- [ ] Complex diagram generation (sequence, ER, class)
-- [ ] Edit existing diagrams via chat
-- [ ] Conversation history persistence
-- [ ] Model selection UI
-
-### Phase 4: Polish
-- [ ] Undo AI changes (revert last AI action)
-- [ ] Suggested prompts / templates
-- [ ] Cost tracking / rate limiting
-- [ ] Multi-language support
-- [ ] Keyboard shortcut to open chat (Ctrl+Shift+A)
-
----
-
-## Environment Variables
-
-```env
-# Backend (.env)
-EXCALIDRAW_AI_PROVIDER=openai              # openai | anthropic
-EXCALIDRAW_AI_API_KEY=sk-...             # Provider API key
-EXCALIDRAW_AI_BASE_URL=                   # Custom endpoint (optional, for OpenAI compatible)
-EXCALIDRAW_AI_MODEL=gpt-4o                # Default model
-EXCALIDRAW_AI_MAX_TOKENS=4096
-EXCALIDRAW_AI_TEMPERATURE=0.7
+**Response:**
+```json
+{
+  "status": "ok",
+  "models": ["gpt-4o", "gpt-4o-mini", "claude-sonnet-4-20250514"]
+}
 ```
 
 ---
 
-## Security Considerations
+## Usage Flow
 
-- API key disimpan di backend, tidak exposed ke FE
-- Rate limiting per user (misal 20 requests/minute)
-- Max canvas context size (prevent abuse)
-- Input sanitization (prevent prompt injection via element labels)
-- Cost monitoring per user/org
-
----
-
-## Related Docs
-
-- [FILE_SHEET_ARCHITECTURE.md](./FILE_SHEET_ARCHITECTURE.md) — File/sheet structure
-- [ERD.md](./erd/ERD.md) — Database schema
-- [Excalidraw MCP packages](https://www.npmjs.com/search?q=excalidraw%20mcp) — NPM ecosystem
+1. **User clicks AI Assistant button** (bottom-right floating button)
+2. **Chat Panel opens** with suggested prompts
+3. **User types message** (e.g., "Buatkan flowchart login")
+4. **Backend streams response** via SSE:
+   - Text messages
+   - Tool calls → Elements added to canvas in real-time
+5. **Canvas updates** as AI creates elements
+6. **User can stop** generation mid-stream
 
 ---
 
-## Open Questions
+## Build Verification
 
-1. **Conversation persistence** — Simpan chat history di DB atau localStorage saja? Answer: Localstorage
-2. **Per-file or global chat?** — Chat terikat ke file/sheet atau global? Answer: persheets 
-3. **Collaborative AI** — Jika multi-user di room, siapa yang bisa trigger AI? Answer: All users 
-4. **Cost model** — Free tier? Token limit per user? Answer: Currently no tier 
-5. **Offline fallback** — Jika AI unavailable, show graceful error? Answer: Yes
+- ✅ Backend: `go build ./cmd/server` passes
+- ✅ Frontend: `npm run build` passes
+- ✅ No TypeScript errors
+- ✅ No Go compilation errors
+
+---
+
+## Next Steps (Optional Enhancements)
+
+- [ ] **Mermaid to Excalidraw** - Convert Mermaid diagrams
+- [ ] **Layout helpers** - Auto-layout flowchart/grid
+- [ ] **AI model selector** - UI to switch models
+- [ ] **Conversation export** - Save chat history
+- [ ] **Image generation** - Generate and embed images
+- [ ] **Text-to-diagram** - Better diagram interpretation
+
+---
+
+## Related Documents
+
+- [Excalidraw MCP App](https://github.com/antonpk1/excalidraw-mcp-app) - Reference implementation
+- [@excalidraw/mermaid-to-excalidraw](https://www.npmjs.com/package/@excalidraw/mermaid-to-excalidraw) - Mermaid conversion

@@ -331,6 +331,11 @@ func (p *AnthropicProvider) GetModels() []string {
 	return SupportedModels()
 }
 
+// DefaultModel returns the configured model from env
+func (p *AnthropicProvider) DefaultModel() string {
+	return p.Model
+}
+
 // convertAnthropicTools converts tools to Anthropic format
 func convertAnthropicTools(tools []Tool) []anthropicTool {
 	result := make([]anthropicTool, len(tools))

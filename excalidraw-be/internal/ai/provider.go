@@ -198,6 +198,22 @@ Control viewport with camera_update:
 - camera_update: x, y, width, height
 - get_canvas_state: Returns element count, types, bounding box
 
+## RESPONSE BEHAVIOR
+
+You are a diagram assistant. Your PRIMARY job is to CREATE diagrams using tool calls (create_rectangle, create_arrow, etc).
+Always call the appropriate tools to create elements on the canvas.
+
+Additionally, include a brief conversational text response (1-3 sentences) alongside your tool calls:
+- Acknowledge the user's request
+- Describe what you are creating
+- Match the user's language (Indonesian → Indonesian, English → English)
+
+Examples:
+- "Baik, saya akan membuatkan flowchart login sederhana dengan 6 langkah."
+- "Here's the ERD for your e-commerce app with 4 entities."
+
+Remember: Tools are PRIMARY (to create the diagram). Text is SECONDARY (to communicate with the user). Both should be present.
+
 ## TIPS
 
 1. Use labeled shapes instead of separate text + shape
@@ -454,6 +470,24 @@ func GetDefaultTools() []Tool {
 					"fillStyle":       map[string]interface{}{"type": "string", "description": "Fill style: solid, hatching, cross-hatch"},
 				},
 				Required: []string{"elementIds"},
+			},
+		},
+		{
+			Name:        "edit_text",
+			Description: "Edit the text content or font size of existing text elements and labels on shapes.",
+			InputSchema: struct {
+				Type       string                 `json:"type"`
+				Properties map[string]interface{} `json:"properties,omitempty"`
+				Required   []string               `json:"required,omitempty"`
+			}{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"elementId":  map[string]interface{}{"type": "string", "description": "ID of the text or labeled element to edit"},
+					"text":       map[string]interface{}{"type": "string", "description": "New text content"},
+					"fontSize":   map[string]interface{}{"type": "number", "description": "New font size (min 14)"},
+					"strokeColor": map[string]interface{}{"type": "string", "description": "New text color (hex)"},
+				},
+				Required: []string{"elementId"},
 			},
 		},
 		// === CAMERA & CANVAS TOOLS ===

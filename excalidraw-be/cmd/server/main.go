@@ -209,7 +209,12 @@ func main() {
 
 	// AI routes (optional, only if configured)
 	if aiHandler != nil {
+		// Rate limiter for AI endpoints: 2 requests/second, burst 6 per IP
+		aiRateLimiter := appmiddleware.NewIPRateLimiter(2, 6)
+
 		r.Route("/api/ai", func(r chi.Router) {
+			r.Use(aiRateLimiter.Middleware)
+
 			// Remove write deadline for SSE streaming (AI chat can take time)
 			r.Use(func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

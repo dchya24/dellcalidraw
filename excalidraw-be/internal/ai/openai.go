@@ -106,7 +106,7 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []T
 
 	if len(tools) > 0 {
 		req.Tools = convertTools(tools)
-		req.ToolChoice = "auto"
+		req.ToolChoice = "required"
 	}
 
 	body, err := json.Marshal(req)
@@ -207,7 +207,7 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 
 	if len(tools) > 0 {
 		req.Tools = convertTools(tools)
-		req.ToolChoice = "auto"
+		req.ToolChoice = "required"
 	}
 
 	body, err := json.Marshal(req)

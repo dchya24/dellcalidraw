@@ -7,6 +7,11 @@ import type {
   ToolCall,
 } from "../types/ai";
 
+// Maximum conversations to keep in localStorage (prevent storage bloat)
+const MAX_CONVERSATIONS = 20;
+// Maximum messages per conversation (older messages are pruned)
+const MAX_MESSAGES_PER_CONVERSATION = 100;
+
 interface AIChatStore {
   // Per-sheet chat conversations
   conversations: Record<string, ChatMessage[]>; // tabId -> messages
@@ -87,12 +92,21 @@ export const useAIChatStore = create<AIChatStore>()(
       },
 
       addMessage: (tabId: string, message: ChatMessage) => {
-        set((state) => ({
-          conversations: {
-            ...state.conversations,
-            [tabId]: [...(state.conversations[tabId] || []), message],
-          },
-        }));
+        set((state) => {
+          const msgs = [...(state.conversations[tabId] || []), message];
+
+          // Prune old messages if exceeding limit
+          const pruned = msgs.length > MAX_MESSAGES_PER_CONVERSATION
+            ? msgs.slice(-MAX_MESSAGES_PER_CONVERSATION)
+            : msgs;
+
+          return {
+            conversations: {
+              ...state.conversations,
+              [tabId]: pruned,
+            },
+          };
+        });
       },
 
       updateLastMessage: (tabId: string, messageId: string, updates: Partial<ChatMessage>) => {
@@ -271,16 +285,33 @@ export const useAIChatStore = create<AIChatStore>()(
     }),
     {
       name: "ai-chat-storage",
-      partialize: (state) => ({
-        conversations: state.conversations,
-        aiConfig: {
-          provider: state.aiConfig.provider,
-          model: state.aiConfig.model,
-          maxTokens: state.aiConfig.maxTokens,
-          temperature: state.aiConfig.temperature,
-          // Note: apiKey and baseURL are NOT persisted for security
-        },
-      }),
+      partialize: (state) => {
+        // Prune conversations: keep only the most recent ones
+        const entries = Object.entries(state.conversations);
+        let pruned = state.conversations;
+        if (entries.length > MAX_CONVERSATIONS) {
+          // Sort by most recent message timestamp, keep top N
+          const sorted = entries
+            .sort(([, a], [, b]) => {
+              const aTime = a[a.length - 1]?.timestamp || 0;
+              const bTime = b[b.length - 1]?.timestamp || 0;
+              return bTime - aTime;
+            })
+            .slice(0, MAX_CONVERSATIONS);
+          pruned = Object.fromEntries(sorted);
+        }
+
+        return {
+          conversations: pruned,
+          aiConfig: {
+            provider: state.aiConfig.provider,
+            model: state.aiConfig.model,
+            maxTokens: state.aiConfig.maxTokens,
+            temperature: state.aiConfig.temperature,
+            // Note: apiKey and baseURL are NOT persisted for security
+          },
+        };
+      },
     }
   )
 );

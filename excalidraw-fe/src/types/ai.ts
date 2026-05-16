@@ -11,6 +11,8 @@ export interface ChatMessage {
   timestamp: number;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
+  /** Element IDs created by AI tool calls in this message */
+  createdElementIds?: string[];
 }
 
 export interface ToolCall {
@@ -128,6 +130,13 @@ export interface MoveElementsParams {
 
 export interface DeleteElementsParams {
   elementIds: string[];
+}
+
+export interface EditTextParams {
+  elementId: string;
+  text?: string;
+  fontSize?: number;
+  strokeColor?: string;
 }
 
 export interface MermaidToExcalidrawParams {

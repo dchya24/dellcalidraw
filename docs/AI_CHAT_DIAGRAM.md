@@ -104,12 +104,18 @@ r.Route("/api/ai", func(r chi.Router) {
 
 ### Shape Creation
 ```typescript
-create_rectangle  // Args: x, y, width, height, label?, strokeColor?, backgroundColor?
-create_ellipse     // Args: x, y, width, height, label?, strokeColor?, backgroundColor?
-create_diamond     // Args: x, y, width, height, label?, strokeColor?, backgroundColor?
+create_rectangle  // Args: x, y, width, height, label?, strokeColor?, backgroundColor?, fillStyle?, strokeWidth?, roughness?, opacity?, roundness?
+create_ellipse     // Args: x, y, width, height, label?, strokeColor?, backgroundColor?, fillStyle?, strokeWidth?, roughness?, opacity?
+create_diamond     // Args: x, y, width, height, label?, strokeColor?, backgroundColor?, fillStyle?, strokeWidth?, roughness?, opacity?
 create_text        // Args: x, y, text, fontSize?, strokeColor?
-create_arrow       // Args: startX, startY, endX, endY, label?, strokeColor?
-create_line        // Args: points, strokeColor?
+create_arrow       // Args: startX, startY, endX, endY, label?, strokeColor?, strokeWidth?, strokeStyle?, startArrowhead?, endArrowhead?, startBinding?, endBinding?
+create_line        // Args: points, strokeColor?, strokeWidth?, strokeStyle?, startArrowhead?, endArrowhead?
+```
+
+### Zones & Layout
+```typescript
+create_zone        // Args: x, y, width, height, label?, strokeColor?, backgroundColor?, opacity?
+camera_update      // Args: x, y, width, height — controls the viewport camera
 ```
 
 ### Element Modification
@@ -231,10 +237,11 @@ Health check for AI service.
 
 - [ ] **Mermaid to Excalidraw** - Convert Mermaid diagrams
 - [ ] **Layout helpers** - Auto-layout flowchart/grid
-- [ ] **AI model selector** - UI to switch models
+- [x] **AI model selector** - UI to switch models ✅ (Sprint 1)
 - [ ] **Conversation export** - Save chat history
 - [ ] **Image generation** - Generate and embed images
 - [ ] **Text-to-diagram** - Better diagram interpretation
+- [ ] **Rate limiting** - Protect AI endpoints from abuse ✅ (Sprint 1)
 
 ---
 

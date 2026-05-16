@@ -84,8 +84,17 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		{Role: "user", Content: req.Message},
 	}
 
-	// Model comes from server config only — ignore frontend model param
+	// Use model from request if provided and valid, otherwise use server default
 	model := h.provider.DefaultModel()
+	if req.Model != "" {
+		validModels := h.provider.GetModels()
+		for _, m := range validModels {
+			if m == req.Model {
+				model = req.Model
+				break
+			}
+		}
+	}
 	slog.Info("[AI Handler] Processing chat request", "message", req.Message, "model", model, "canvas_elements", len(canvasElements))
 
 	// Stream response via SSE

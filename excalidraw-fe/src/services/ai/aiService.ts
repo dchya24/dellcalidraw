@@ -77,6 +77,7 @@ function parseSSEEvent(data: unknown): SSEEvent | null {
 
 export interface ChatOptions {
   message: string;
+  model?: string;
   canvasContext: CanvasContext;
   onEvent: (event: SSEEvent) => void;
   onError: (error: Error) => void;
@@ -85,7 +86,7 @@ export interface ChatOptions {
 }
 
 export async function sendChatMessage(options: ChatOptions): Promise<void> {
-  const { message, canvasContext, onEvent, onError, onComplete, signal } = options;
+  const { message, model, canvasContext, onEvent, onError, onComplete, signal } = options;
   const baseUrl = getBaseUrl();
 
   // Create timeout controller (120 seconds max for AI response)
@@ -106,7 +107,7 @@ export async function sendChatMessage(options: ChatOptions): Promise<void> {
     console.log("[AI Service] Full URL:", fullUrl);
     console.log("[AI Service] Window location:", window.location.href);
     console.log("[AI Service] Request starting at:", Date.now());
-    
+
     const response = await fetch(fullUrl, {
       method: "POST",
       headers: {
@@ -115,6 +116,7 @@ export async function sendChatMessage(options: ChatOptions): Promise<void> {
       },
       body: JSON.stringify({
         message,
+        model: model || undefined,
         canvasContext: {
           elements: canvasContext.elements,
           activeFileId: canvasContext.activeFileId,
@@ -162,6 +164,7 @@ export async function sendChatMessage(options: ChatOptions): Promise<void> {
 
         reader.read().then(
           (result) => {
+            console.log('result', result)
             clearTimeout(timeout);
             resolve(result);
           },
@@ -215,18 +218,18 @@ export async function sendChatMessage(options: ChatOptions): Promise<void> {
   } catch (err) {
     clearTimeout(timeoutId);
     console.error("[AI Service] Error:", err);
-    
+
     // Check if timeout was the cause
     if (combinedSignal.aborted && !(signal?.aborted)) {
       onError(new Error("Request timed out. The AI is taking too long to respond."));
       return;
     }
-    
+
     if (signal?.aborted) {
       onComplete();
       return;
     }
-    
+
     onError(err as Error);
   }
 }

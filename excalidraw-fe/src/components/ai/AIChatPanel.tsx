@@ -7,12 +7,19 @@ import {
   Loader2,
   Sparkles,
   Trash2,
+  ChevronDown,
+  Undo2,
 } from "lucide-react";
 import { useAIChatStore } from "../../store/useAIChatStore";
 import { useWhiteboardStore } from "../../store/useWhiteboardStore";
-import { sendChatMessage } from "../../services/ai/aiService";
+import { sendChatMessage, listModels, getActiveModel } from "../../services/ai/aiService";
+import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { ChatMessage } from "../../types/ai";
+import type { ChatMessage, ToolCall } from "../../types/ai";
+
+// Type alias - convertToExcalidrawElements accepts this skeleton format
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ExcalidrawElementSkeleton = Parameters<typeof convertToExcalidrawElements>[0] extends (infer T)[] | null ? T : never;
 
 interface AIChatPanelProps {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
@@ -25,6 +32,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
     togglePanel,
     initConversation,
     addMessage,
+    updateLastMessage,
     clearConversation,
     setStreaming,
     conversations,
@@ -34,9 +42,14 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
 
   const [inputValue, setInputValue] = useState("");
   const [currentTabId, setCurrentTabId] = useState<string | null>(null);
+  const [modelList, setModelList] = useState<string[]>([]);
+  const [activeModel, setActiveModel] = useState<string>("");
+  const [showModelPicker, setShowModelPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const trackedToolCalls = useRef<ToolCall[]>([]);
+  const trackedElementIds = useRef<string[]>([]);
 
   // Initialize conversation when tab changes
   useEffect(() => {
@@ -64,6 +77,27 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
     }
   }, [isPanelOpen]);
 
+  // Fetch available models on mount
+  useEffect(() => {
+    async function fetchModels() {
+      const [models, model] = await Promise.all([
+        listModels(),
+        getActiveModel(),
+      ]);
+      if (models.length > 0) setModelList(models);
+      if (model) setActiveModel(model);
+    }
+    fetchModels();
+  }, []);
+
+  // Close model picker when clicking outside
+  useEffect(() => {
+    if (!showModelPicker) return;
+    const handleClick = () => setShowModelPicker(false);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [showModelPicker]);
+
   // Cleanup abort controller on unmount
   useEffect(() => {
     return () => {
@@ -71,8 +105,13 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
     };
   }, []);
 
-  // Get messages for current tab
-  const messages = currentTabId ? conversations[currentTabId] || [] : [];
+  // Get messages for current tab (deduplicate by id, keeping latest version)
+  const rawMessages = currentTabId ? conversations[currentTabId] || [] : [];
+  const messages = (() => {
+    const seen = new Map<string, ChatMessage>();
+    rawMessages.forEach(msg => seen.set(msg.id, msg));
+    return Array.from(seen.values());
+  })();
 
   // Send message to AI
   const handleSend = useCallback(async () => {
@@ -127,6 +166,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
 
     await sendChatMessage({
       message: userMessage.content,
+      model: activeModel || undefined,
       canvasContext: {
         elements,
         activeFileId: activeFile.id,
@@ -138,28 +178,12 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
 
         switch (event.type) {
           case "text": {
-            // Update the last message with accumulated text
-            // Use updateLastMessage instead of addMessage to avoid duplicate keys
-            const { conversations } = useAIChatStore.getState();
-            const msgs = conversations[currentTabId] || [];
-            const last = msgs[msgs.length - 1];
-            
-            if (last && last.role === "assistant" && last.id === assistantMsgId) {
-              // Update existing message with accumulated text
-              const accumulated = (last.content || "") + event.content;
-              addMessage(currentTabId, {
-                id: assistantMsgId,
-                role: "assistant",
-                content: accumulated,
-                timestamp: Date.now(),
-              });
-            } else {
-              // First text event - create message with this content
-              addMessage(currentTabId, {
-                id: assistantMsgId,
-                role: "assistant",
-                content: event.content,
-                timestamp: Date.now(),
+            const { conversations: textConvs } = useAIChatStore.getState();
+            const textMsgs = textConvs[currentTabId] || [];
+            const textLast = textMsgs[textMsgs.length - 1];
+            if (textLast && textLast.id === assistantMsgId) {
+              updateLastMessage(currentTabId, assistantMsgId, {
+                content: (textLast.content || "") + event.content,
               });
             }
             break;
@@ -168,6 +192,26 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
           case "tool_call": {
             const args = (event.arguments || {}) as Record<string, unknown>;
             const toolName = event.name;
+
+            // Track tool call for progress display and summary
+            trackedToolCalls.current.push({
+              id: event.id || crypto.randomUUID(),
+              name: toolName,
+              arguments: event.arguments as Record<string, unknown>,
+            });
+
+            // Show progress indicator if no text content yet
+            const { conversations: tcConvs } = useAIChatStore.getState();
+            const tcMsgs = tcConvs[currentTabId] || [];
+            const tcLast = tcMsgs[tcMsgs.length - 1];
+            if (tcLast && tcLast.id === assistantMsgId && !tcLast.content) {
+              const nonCamera = trackedToolCalls.current.filter(tc => tc.name !== "camera_update");
+              if (nonCamera.length > 0) {
+                updateLastMessage(currentTabId, assistantMsgId, {
+                  content: `Membuat diagram... (${nonCamera.length} elemen diproses)`,
+                });
+              }
+            }
 
             // Handle camera_update - just log it for now (viewport is auto-managed)
             if (toolName === "camera_update") {
@@ -188,14 +232,46 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
               applyUpdateStyle(excalidrawAPI, args);
               break;
             }
+            if (toolName === "edit_text") {
+              applyEditText(excalidrawAPI, args);
+              break;
+            }
 
             // Handle create tools — add to canvas immediately
-            const element = generateElementFromTool(toolName, args);
-            if (element) {
-              const currentElements = excalidrawAPI.getSceneElements();
-              excalidrawAPI.updateScene({
-                elements: [...currentElements, element as Parameters<typeof excalidrawAPI.updateScene>[0]["elements"][number]],
-              });
+            const { skeleton, bindings } = generateSkeletonFromTool(toolName, args, excalidrawAPI);
+            console.log(`[AIChatPanel] Tool: ${toolName}`, { args, skeleton, bindings });
+            if (skeleton) {
+              try {
+                const currentElements = excalidrawAPI.getSceneElements();
+                const converted = convertToExcalidrawElements(
+                  [skeleton],
+                  { regenerateIds: false }
+                );
+                console.log(`[AIChatPanel] Converted ${converted.length} elements:`, converted.map(e => ({ id: e.id, type: e.type, x: e.x, y: e.y, width: e.width, height: e.height, points: (e as any).points })));
+                if (converted.length > 0) {
+                  // Track created element IDs for undo support
+                  for (const ce of converted) {
+                    trackedElementIds.current.push(ce.id);
+                  }
+
+                  let allElements = [...currentElements, ...converted];
+
+                  // If there are bindings to existing elements, wire them up manually
+                  if (bindings) {
+                    allElements = applyArrowBindings(
+                      allElements,
+                      converted[0].id,
+                      bindings
+                    );
+                  }
+
+                  excalidrawAPI.updateScene({
+                    elements: allElements,
+                  });
+                }
+              } catch (err) {
+                console.error(`[AIChatPanel] Error converting ${toolName}:`, err);
+              }
             }
             break;
           }
@@ -203,22 +279,44 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
           case "tool_result":
             break;
 
-          case "done":
+          case "done": {
+            // Finalize: add tool calls to message + generate summary if no text
+            const { conversations: doneConvs } = useAIChatStore.getState();
+            const doneMsgs = doneConvs[currentTabId] || [];
+            const doneLast = doneMsgs[doneMsgs.length - 1];
+
+            if (doneLast && doneLast.id === assistantMsgId) {
+              const updates: Partial<ChatMessage> = {
+                toolCalls: [...trackedToolCalls.current],
+                createdElementIds: [...trackedElementIds.current],
+              };
+              const isProgressMsg = doneLast.content?.startsWith("Membuat diagram");
+              if (!doneLast.content || isProgressMsg) {
+                updates.content = generateToolSummaryText(trackedToolCalls.current);
+              }
+              updateLastMessage(currentTabId, assistantMsgId, updates);
+            }
+
+            trackedToolCalls.current = [];
+            trackedElementIds.current = [];
             if (excalidrawAPI) {
               excalidrawAPI.history.clear();
             }
             break;
+          }
         }
       },
       onError: (error) => {
-        addMessage(currentTabId, {
-          id: assistantMsgId,
-          role: "assistant",
-          content: `Error: ${error.message}`,
+        trackedToolCalls.current = [];
+        trackedElementIds.current = [];
+        updateLastMessage(currentTabId, assistantMsgId, {
+          content: `❌ Error: ${error.message}`,
           timestamp: Date.now(),
         });
       },
       onComplete: () => {
+        trackedToolCalls.current = [];
+        trackedElementIds.current = [];
         setStreaming(false);
       },
       signal: abortControllerRef.current.signal,
@@ -232,6 +330,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
     getActiveFile,
     getActiveTab,
     saveTabState,
+    updateLastMessage,
     excalidrawAPI,
   ]);
 
@@ -242,6 +341,38 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
       handleSend();
     }
   };
+
+  // Undo AI-generated elements for a specific message
+  const handleUndoAI = useCallback((elementIds: string[]) => {
+    if (!excalidrawAPI || elementIds.length === 0) return;
+
+    const elements = excalidrawAPI.getSceneElements();
+    const idSet = new Set(elementIds);
+
+    // Find bound text elements of the deleted shapes too
+    const boundTextIds = new Set<string>();
+    for (const el of elements) {
+      if (idSet.has(el.id)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const bound = (el as any).boundElements;
+        if (Array.isArray(bound)) {
+          for (const b of bound) {
+            if (b.type === "text") boundTextIds.add(b.id);
+          }
+        }
+      }
+    }
+
+    const allIdsToDelete = new Set([...idSet, ...boundTextIds]);
+    const updated = elements.map((el) => {
+      if (allIdsToDelete.has(el.id)) {
+        return { ...el, isDeleted: true };
+      }
+      return el;
+    });
+    excalidrawAPI.updateScene({ elements: updated });
+    excalidrawAPI.history.clear();
+  }, [excalidrawAPI]);
 
   // Suggested prompts
   const suggestedPrompts = [
@@ -289,6 +420,41 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
           <span className="font-semibold text-sm">AI Assistant</span>
         </div>
         <div className="flex items-center gap-1">
+          {/* Model selector */}
+          {modelList.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowModelPicker(!showModelPicker);
+                }}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs hover:bg-gray-100 transition-colors max-w-[160px]"
+                title="Select model"
+              >
+                <span className="truncate text-gray-500">{activeModel || "model"}</span>
+                <ChevronDown size={12} className="shrink-0 text-gray-400" />
+              </button>
+              {showModelPicker && (
+                <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 max-h-60 overflow-y-auto">
+                  {modelList.map((model) => (
+                    <button
+                      key={model}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveModel(model);
+                        setShowModelPicker(false);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 transition-colors ${
+                        model === activeModel ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"
+                      }`}
+                    >
+                      {model}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <button
             onClick={() => currentTabId && clearConversation(currentTabId)}
             className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
@@ -316,55 +482,70 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
           </div>
         )}
 
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
+        {messages.map((msg, msgIndex) => {
+          const isLastMsg = msgIndex === messages.length - 1;
+          const isThinking = isStreaming && isLastMsg && msg.role === "assistant" && !msg.content;
+          const showToolBadges = msg.role === "assistant" && msg.toolCalls && msg.toolCalls.length > 0;
+          const toolSummary = showToolBadges ? getToolCallSummary(msg.toolCalls!) : [];
+
+          return (
             <div
-              className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
-                msg.role === "user"
-                  ? "bg-blue-500 text-white rounded-br-md"
-                  : "bg-gray-100 rounded-bl-md"
-              }`}
+              key={msg.id}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <div className="flex items-start gap-2">
-                {msg.role === "assistant" && (
-                  <Bot size={14} className="mt-1 shrink-0 opacity-60" />
-                )}
-                {msg.role === "user" && (
-                  <User size={14} className="mt-1 shrink-0 opacity-80" />
-                )}
-                <div className="text-sm whitespace-pre-wrap">
-                  {msg.content}
-                  {msg.toolCalls && msg.toolCalls.length > 0 && (
-                    <div className="mt-2 text-xs opacity-70">
-                      {msg.toolCalls.map((tc, i) => (
-                        <span key={i} className="inline-block px-2 py-1 rounded bg-black/10 mr-1 mb-1">
-                          {tc.name}()
-                        </span>
-                      ))}
-                    </div>
+              <div
+                className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
+                  msg.role === "user"
+                    ? "bg-blue-500 text-white rounded-br-md"
+                    : "bg-gray-100 rounded-bl-md"
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  {msg.role === "assistant" && (
+                    <Bot size={14} className="mt-1 shrink-0 opacity-60" />
                   )}
+                  {msg.role === "user" && (
+                    <User size={14} className="mt-1 shrink-0 opacity-80" />
+                  )}
+                  <div className="text-sm">
+                    {isThinking && (
+                      <div className="flex items-center gap-1.5 py-1">
+                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </div>
+                    )}
+                    {msg.content && (
+                      <div className="whitespace-pre-wrap">{msg.content}</div>
+                    )}
+                    {showToolBadges && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {toolSummary.map((item, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs"
+                          >
+                            {item.icon} {item.label}
+                          </span>
+                        ))}
+                        {msg.createdElementIds && msg.createdElementIds.length > 0 && !isStreaming && (
+                          <button
+                            onClick={() => handleUndoAI(msg.createdElementIds!)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-xs hover:bg-red-100 transition-colors cursor-pointer"
+                            title={`Undo ${msg.createdElementIds.length} elements`}
+                          >
+                            <Undo2 size={10} />
+                            Undo
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              {msg.toolResults && msg.toolResults.length > 0 && (
-                <div className="mt-2 text-xs">
-                  {msg.toolResults?.map((tr, i) => (
-                    <div
-                      key={i}
-                      className={`mt-1 px-2 py-1 rounded text-xs ${
-                        tr.success ? "bg-green-500/20" : "bg-red-500/20"
-                      }`}
-                    >
-                      {tr.success ? "✓" : "✗"} {String(tr.callId)}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Suggested prompts (when empty) */}
         {messages.length <= 1 && !isStreaming && (
@@ -439,7 +620,56 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
   );
 }
 
-// ─── Element Generator from Tool Calls ───────────────────────────────────────
+// ─── AI Chat Helpers ───────────────────────────────────────────────────────
+
+const TOOL_META: Record<string, { icon: string; label: string }> = {
+  create_rectangle: { icon: "⬜", label: "Rectangle" },
+  create_ellipse: { icon: "⭕", label: "Ellipse" },
+  create_diamond: { icon: "🔷", label: "Diamond" },
+  create_arrow: { icon: "➡️", label: "Arrow" },
+  create_text: { icon: "📝", label: "Text" },
+  create_line: { icon: "📏", label: "Line" },
+  create_zone: { icon: "📦", label: "Zone" },
+  move_elements: { icon: "↔️", label: "Moved" },
+  delete_elements: { icon: "🗑️", label: "Deleted" },
+  update_element_style: { icon: "🎨", label: "Styled" },
+  edit_text: { icon: "✏️", label: "Edited" },
+  camera_update: { icon: "📷", label: "Camera" },
+};
+
+function getToolCallSummary(toolCalls: ToolCall[]): { icon: string; label: string }[] {
+  const counts: Record<string, number> = {};
+  toolCalls.forEach(tc => {
+    counts[tc.name] = (counts[tc.name] || 0) + 1;
+  });
+
+  return Object.entries(counts)
+    .filter(([name]) => name !== "camera_update")
+    .map(([name, count]) => {
+      const meta = TOOL_META[name] || { icon: "🔧", label: name.replace(/_/g, " ") };
+      return {
+        icon: meta.icon,
+        label: count > 1 ? `${count}× ${meta.label}` : meta.label,
+      };
+    });
+}
+
+function generateToolSummaryText(toolCalls: ToolCall[]): string {
+  const summary = getToolCallSummary(toolCalls);
+  if (summary.length === 0) {
+    // Only camera_update was called, no actual elements created
+    return "AI tidak membuat elemen diagram. Silakan coba lagi dengan instruksi yang lebih spesifik.";
+  }
+
+  const total = toolCalls.filter(tc => tc.name !== "camera_update").length;
+  const parts = summary.map(s => s.label);
+  return `Diagram berhasil dibuat dengan ${total} elemen: ${parts.join(", ")}`;
+}
+
+// ─── Skeleton Generator from Tool Calls ──────────────────────────────────────
+// Uses ExcalidrawElementSkeleton format which is then processed by
+// convertToExcalidrawElements to produce proper elements with correct
+// bindings, containerId, boundElements, etc.
 
 interface LabelObject {
   text: string;
@@ -448,218 +678,294 @@ interface LabelObject {
 
 interface BindingObject {
   elementId: string;
-  fixedPoint: [number, number];
+  fixedPoint?: [number, number];
 }
 
-function generateElementFromTool(
+interface ArrowBindings {
+  startElementId?: string;
+  endElementId?: string;
+}
+
+interface SkeletonResult {
+  skeleton: ExcalidrawElementSkeleton | null;
+  bindings?: ArrowBindings;
+}
+
+function generateSkeletonFromTool(
   toolName: string,
-  args: Record<string, unknown>
-): unknown {
-  const base = {
-    id: crypto.randomUUID(),
-    seed: Math.floor(Math.random() * 1000000),
-    version: 1,
-    versionNonce: Math.floor(Math.random() * 1000000),
-    updated: Date.now(),
-    isDeleted: false,
-    groupIds: [],
-    frameId: null,
-    boundElements: null,
-    link: null,
-    locked: false,
-  };
+  args: Record<string, unknown>,
+  _excalidrawAPI: ExcalidrawImperativeAPI
+): SkeletonResult {
+  const id = crypto.randomUUID();
 
   switch (toolName) {
     case "camera_update": {
-      // Camera update - handled separately, return null for elements
-      return null;
+      return { skeleton: null };
     }
 
     case "create_rectangle": {
       const label = args.label as LabelObject | undefined;
       const roundness = args.roundness as { type: number } | undefined;
-      const fontSize = label?.fontSize || 18;
-      const text = label?.text || "";
-      
+
       return {
-        ...base,
-        type: "rectangle" as const,
-        x: Number(args.x || 100),
-        y: Number(args.y || 100),
-        width: Math.max(Number(args.width || 120), 120),
-        height: Math.max(Number(args.height || 60), 60),
-        angle: 0,
-        strokeColor: String(args.strokeColor || "#1e1e1e"),
-        backgroundColor: String(args.backgroundColor || "transparent"),
-        fillStyle: (args.fillStyle as "solid" | "hatching" | "cross-hatch") || "solid",
-        strokeWidth: Number(args.strokeWidth || 2),
-        strokeStyle: "solid" as const,
-        roughness: Number(args.roughness ?? 1),
-        opacity: Number(args.opacity ?? 100),
-        roundness: roundness ? { type: roundness.type } : null,
-        label: text ? { text, fontSize } : undefined,
+        skeleton: {
+          type: "rectangle",
+          id,
+          x: Number(args.x || 100),
+          y: Number(args.y || 100),
+          width: Math.max(Number(args.width || 120), 120),
+          height: Math.max(Number(args.height || 60), 60),
+          strokeColor: String(args.strokeColor || "#1e1e1e"),
+          backgroundColor: String(args.backgroundColor || "transparent"),
+          fillStyle: (args.fillStyle as "solid" | "hachure" | "cross-hatch") || "solid",
+          strokeWidth: Number(args.strokeWidth || 2),
+          roughness: Number(args.roughness ?? 1),
+          opacity: Number(args.opacity ?? 100),
+          roundness: roundness ? { type: roundness.type as 1 | 2 | 3 } : null,
+          ...(label?.text ? {
+            label: {
+              text: label.text,
+              fontSize: label.fontSize || 18,
+            },
+          } : {}),
+        } as ExcalidrawElementSkeleton,
+      };
+    }
+
+    case "create_ellipse": {
+      const label = args.label as LabelObject | undefined;
+
+      return {
+        skeleton: {
+          type: "ellipse",
+          id,
+          x: Number(args.x || 100),
+          y: Number(args.y || 100),
+          width: Math.max(Number(args.width || 120), 120),
+          height: Math.max(Number(args.height || 60), 60),
+          strokeColor: String(args.strokeColor || "#1e1e1e"),
+          backgroundColor: String(args.backgroundColor || "transparent"),
+          fillStyle: (args.fillStyle as "solid" | "hachure" | "cross-hatch") || "solid",
+          strokeWidth: Number(args.strokeWidth || 2),
+          roughness: 1,
+          opacity: Number(args.opacity ?? 100),
+          ...(label?.text ? {
+            label: {
+              text: label.text,
+              fontSize: label.fontSize || 18,
+            },
+          } : {}),
+        } as ExcalidrawElementSkeleton,
+      };
+    }
+
+    case "create_diamond": {
+      const label = args.label as LabelObject | undefined;
+
+      return {
+        skeleton: {
+          type: "diamond",
+          id,
+          x: Number(args.x || 100),
+          y: Number(args.y || 100),
+          width: Math.max(Number(args.width || 120), 120),
+          height: Math.max(Number(args.height || 80), 80),
+          strokeColor: String(args.strokeColor || "#1e1e1e"),
+          backgroundColor: String(args.backgroundColor || "transparent"),
+          fillStyle: (args.fillStyle as "solid" | "hachure" | "cross-hatch") || "solid",
+          strokeWidth: Number(args.strokeWidth || 2),
+          roughness: 1,
+          opacity: Number(args.opacity ?? 100),
+          ...(label?.text ? {
+            label: {
+              text: label.text,
+              fontSize: label.fontSize || 16,
+            },
+          } : {}),
+        } as ExcalidrawElementSkeleton,
       };
     }
 
     case "create_text": {
       const fontSize = Number(args.fontSize || 20);
       const text = String(args.text || "");
-      const width = Math.max(text.length * fontSize * 0.6, 100);
-      
+
       return {
-        ...base,
-        type: "text" as const,
-        x: Number(args.x || 100),
-        y: Number(args.y || 100),
-        width,
-        height: fontSize * 1.4,
-        angle: 0,
-        strokeColor: String(args.strokeColor || "#1e1e1e"),
-        backgroundColor: "transparent",
-        fillStyle: "solid" as const,
-        strokeWidth: 0,
-        strokeStyle: "solid" as const,
-        roughness: 0,
-        opacity: 100,
-        fontSize,
-        text,
+        skeleton: {
+          type: "text",
+          id,
+          x: Number(args.x || 100),
+          y: Number(args.y || 100),
+          text,
+          fontSize,
+          strokeColor: String(args.strokeColor || "#1e1e1e"),
+        } as ExcalidrawElementSkeleton,
       };
     }
 
     case "create_arrow": {
       const label = args.label as LabelObject | undefined;
-      const startBinding = args.startBinding as BindingObject | undefined;
-      const endBinding = args.endBinding as BindingObject | undefined;
-      
+      const startBindingArg = args.startBinding as BindingObject | undefined;
+      const endBindingArg = args.endBinding as BindingObject | undefined;
+
       const startX = Number(args.startX || 0);
       const startY = Number(args.startY || 0);
       const endX = Number(args.endX || 100);
-      const endY = Number(args.endY || 50);
-      
-      return {
-        ...base,
-        type: "arrow" as const,
-        x: Math.min(startX, endX),
-        y: Math.min(startY, endY),
-        width: Math.abs(endX - startX),
-        height: Math.abs(endY - startY),
-        angle: 0,
+      const endY = Number(args.endY || 0);
+
+      // Ensure we don't pass width/height of 0 — let points define the shape
+      const dx = endX - startX;
+      const dy = endY - startY;
+
+      const skeleton: Record<string, unknown> = {
+        type: "arrow",
+        id,
+        x: startX,
+        y: startY,
+        points: [[0, 0], [dx, dy]],
         strokeColor: String(args.strokeColor || "#1e1e1e"),
-        backgroundColor: "transparent",
-        fillStyle: "solid" as const,
         strokeWidth: Number(args.strokeWidth || 2),
         strokeStyle: (args.strokeStyle as "solid" | "dashed" | "dotted") || "solid",
         roughness: 1,
         opacity: 100,
-        points: [[0, 0], [endX - startX, endY - startY]] as [number, number][],
-        lastCommittedPoint: null,
-        startBinding: startBinding || null,
-        endBinding: endBinding || null,
-        startArrowhead: (args.startArrowhead as "arrow" | "bar" | "dot" | "triangle" | null) || null,
-        endArrowhead: (args.endArrowhead as "arrow" | "bar" | "dot" | "triangle" | null) || "arrow",
-        label: label ? { text: label.text, fontSize: label.fontSize || 14 } : undefined,
+        startArrowhead: (args.startArrowhead as string) || null,
+        endArrowhead: (args.endArrowhead as string) || "arrow",
       };
-    }
 
-    case "create_ellipse": {
-      const label = args.label as LabelObject | undefined;
-      
-      return {
-        ...base,
-        type: "ellipse" as const,
-        x: Number(args.x || 100),
-        y: Number(args.y || 100),
-        width: Math.max(Number(args.width || 120), 120),
-        height: Math.max(Number(args.height || 60), 60),
-        angle: 0,
-        strokeColor: String(args.strokeColor || "#1e1e1e"),
-        backgroundColor: String(args.backgroundColor || "transparent"),
-        fillStyle: (args.fillStyle as "solid" | "hatching" | "cross-hatch") || "solid",
-        strokeWidth: Number(args.strokeWidth || 2),
-        strokeStyle: "solid" as const,
-        roughness: 1,
-        opacity: Number(args.opacity ?? 100),
-        label: label ? { text: label.text, fontSize: label.fontSize || 18 } : undefined,
-      };
-    }
+      if (label?.text) {
+        skeleton.label = {
+          text: label.text,
+          fontSize: label.fontSize || 14,
+        };
+      }
 
-    case "create_diamond": {
-      const label = args.label as LabelObject | undefined;
-      
+      // Collect bindings to wire up after conversion
+      const bindings: ArrowBindings = {};
+      if (startBindingArg?.elementId) {
+        bindings.startElementId = startBindingArg.elementId;
+      }
+      if (endBindingArg?.elementId) {
+        bindings.endElementId = endBindingArg.elementId;
+      }
+
       return {
-        ...base,
-        type: "diamond" as const,
-        x: Number(args.x || 100),
-        y: Number(args.y || 100),
-        width: Math.max(Number(args.width || 120), 120),
-        height: Math.max(Number(args.height || 80), 80),
-        angle: 0,
-        strokeColor: String(args.strokeColor || "#1e1e1e"),
-        backgroundColor: String(args.backgroundColor || "transparent"),
-        fillStyle: (args.fillStyle as "solid" | "hatching" | "cross-hatch") || "solid",
-        strokeWidth: Number(args.strokeWidth || 2),
-        strokeStyle: "solid" as const,
-        roughness: 1,
-        opacity: Number(args.opacity ?? 100),
-        label: label ? { text: label.text, fontSize: label.fontSize || 16 } : undefined,
+        skeleton: skeleton as unknown as ExcalidrawElementSkeleton,
+        bindings: (bindings.startElementId || bindings.endElementId) ? bindings : undefined,
       };
     }
 
     case "create_line": {
       const rawPoints = args.points as [number, number][] || [[0, 0], [100, 0]];
-      
+      const x = rawPoints[0]?.[0] || 0;
+      const y = rawPoints[0]?.[1] || 0;
+
       return {
-        ...base,
-        type: "line" as const,
-        x: rawPoints[0]?.[0] || 0,
-        y: rawPoints[0]?.[1] || 0,
-        width: 100,
-        height: 0,
-        angle: 0,
-        strokeColor: String(args.strokeColor || "#1e1e1e"),
-        backgroundColor: "transparent",
-        fillStyle: "solid" as const,
-        strokeWidth: Number(args.strokeWidth || 2),
-        strokeStyle: (args.strokeStyle as "solid" | "dashed" | "dotted") || "solid",
-        roughness: 1,
-        opacity: 100,
-        points: rawPoints.map((p, i) =>
-          i === 0 ? [0, 0] : [p[0] - rawPoints[0][0], p[1] - rawPoints[0][1]]
-        ),
-        lastCommittedPoint: null,
-        startBinding: null,
-        endBinding: null,
-        startArrowhead: (args.startArrowhead as "arrow" | "bar" | "dot" | "triangle" | null) || null,
-        endArrowhead: (args.endArrowhead as "arrow" | "bar" | "dot" | "triangle" | null) || null,
+        skeleton: {
+          type: "line",
+          id,
+          x,
+          y,
+          points: rawPoints.map((p, i) =>
+            i === 0 ? [0, 0] : [p[0] - x, p[1] - y]
+          ),
+          strokeColor: String(args.strokeColor || "#1e1e1e"),
+          strokeWidth: Number(args.strokeWidth || 2),
+          strokeStyle: (args.strokeStyle as "solid" | "dashed" | "dotted") || "solid",
+          roughness: 1,
+          opacity: 100,
+          startArrowhead: (args.startArrowhead as string) || null,
+          endArrowhead: (args.endArrowhead as string) || null,
+        } as unknown as ExcalidrawElementSkeleton,
       };
     }
 
     case "create_zone": {
       const label = args.label as LabelObject | undefined;
-      
+
       return {
-        ...base,
-        type: "rectangle" as const,
-        x: Number(args.x || 0),
-        y: Number(args.y || 0),
-        width: Number(args.width || 800),
-        height: Number(args.height || 600),
-        angle: 0,
-        strokeColor: String(args.strokeColor || "#b0b0b0"),
-        backgroundColor: String(args.backgroundColor || "#dbe4ff"),
-        fillStyle: "solid" as const,
-        strokeWidth: Number(args.strokeWidth || 1),
-        strokeStyle: "solid" as const,
-        roughness: 0,
-        opacity: Number(args.opacity ?? 35),
-        roundness: { type: 3 },
-        label: label ? { text: label.text, fontSize: label.fontSize || 16 } : undefined,
+        skeleton: {
+          type: "rectangle",
+          id,
+          x: Number(args.x || 0),
+          y: Number(args.y || 0),
+          width: Number(args.width || 800),
+          height: Number(args.height || 600),
+          strokeColor: String(args.strokeColor || "#b0b0b0"),
+          backgroundColor: String(args.backgroundColor || "#dbe4ff"),
+          fillStyle: "solid",
+          strokeWidth: Number(args.strokeWidth || 1),
+          roughness: 0,
+          opacity: Number(args.opacity ?? 35),
+          roundness: { type: 3 as const },
+          ...(label?.text ? {
+            label: {
+              text: label.text,
+              fontSize: label.fontSize || 16,
+            },
+          } : {}),
+        } as ExcalidrawElementSkeleton,
       };
     }
 
     default:
-      return null;
+      return { skeleton: null };
   }
+}
+
+// ─── Arrow Binding Helper ────────────────────────────────────────────────────
+// Manually wires up arrow bindings to existing canvas elements since
+// convertToExcalidrawElements can only bind within its own input array.
+
+function applyArrowBindings(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  elements: any[],
+  arrowId: string,
+  bindings: ArrowBindings
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any[] {
+  return elements.map((el) => {
+    // Update the arrow's startBinding/endBinding
+    if (el.id === arrowId) {
+      const updates: Record<string, unknown> = {};
+
+      if (bindings.startElementId) {
+        updates.startBinding = {
+          elementId: bindings.startElementId,
+          focus: 0,
+          gap: 5,
+        };
+      }
+
+      if (bindings.endElementId) {
+        updates.endBinding = {
+          elementId: bindings.endElementId,
+          focus: 0,
+          gap: 5,
+        };
+      }
+
+      return { ...el, ...updates };
+    }
+
+    // Update target elements' boundElements to include this arrow
+    if (
+      el.id === bindings.startElementId ||
+      el.id === bindings.endElementId
+    ) {
+      const existingBound = el.boundElements || [];
+      const alreadyBound = existingBound.some(
+        (b: { id: string }) => b.id === arrowId
+      );
+      if (!alreadyBound) {
+        return {
+          ...el,
+          boundElements: [...existingBound, { id: arrowId, type: "arrow" }],
+        };
+      }
+    }
+
+    return el;
+  });
 }
 
 // ─── Modify Tool Helpers ─────────────────────────────────────────────────────
@@ -719,4 +1025,55 @@ function applyUpdateStyle(
     return patched;
   });
   api.updateScene({ elements: updated as typeof elements });
+}
+
+function applyEditText(
+  api: ExcalidrawImperativeAPI,
+  args: Record<string, unknown>
+): void {
+  const elementId = String(args.elementId || "");
+  if (!elementId) return;
+
+  const elements = api.getSceneElements();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updated = elements.map((el: any) => {
+    // Case 1: direct text element
+    if (el.id === elementId && el.type === "text") {
+      const patched = { ...el };
+      if (args.text !== undefined) patched.text = String(args.text);
+      if (args.fontSize !== undefined) patched.fontSize = Number(args.fontSize);
+      if (args.strokeColor !== undefined) patched.strokeColor = String(args.strokeColor);
+      return patched;
+    }
+
+    // Case 2: labeled shape — update strokeColor on the shape
+    if (el.id === elementId && el.type !== "text" && args.strokeColor !== undefined) {
+      return { ...el, strokeColor: String(args.strokeColor) };
+    }
+
+    return el;
+  });
+
+  // Also update bound text elements for labeled shapes
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const targetEl = elements.find((e: any) => e.id === elementId);
+  if (targetEl && (targetEl as any).type !== "text") {
+    const boundElements = (targetEl as any).boundElements as Array<{ id: string; type: string }> | undefined;
+    if (boundElements && (args.text !== undefined || args.fontSize !== undefined)) {
+      for (const bound of boundElements) {
+        if (bound.type === "text") {
+          const textIdx = updated.findIndex((e) => e.id === bound.id);
+          if (textIdx !== -1) {
+            const textEl = { ...updated[textIdx] } as any;
+            if (args.text !== undefined) textEl.text = String(args.text);
+            if (args.fontSize !== undefined) textEl.fontSize = Number(args.fontSize);
+            if (args.strokeColor !== undefined) textEl.strokeColor = String(args.strokeColor);
+            updated[textIdx] = textEl;
+          }
+        }
+      }
+    }
+  }
+
+  api.updateScene({ elements: updated });
 }

@@ -959,7 +959,7 @@ export default function Whiteboard({
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} excalidrawAPI={excalidrawAPI} />
 
       <div className="flex-1 relative z-0">
-        {/*{import.meta.env.SHOW_TOOLBAR &&*/}
+        {import.meta.env.SHOW_TOOLBAR &&
           <Toolbar
             excalidrawAPI={excalidrawAPI}
             onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
@@ -968,7 +968,7 @@ export default function Whiteboard({
             onOpenRoomSettings={handleOpenRoomSettings}
             onSaveToCloud={handleSaveToCloud}
           />
-        {/*}*/}
+        }
 
         {floatingTabOpen && (
           <FloatingTab
@@ -1077,7 +1077,9 @@ export default function Whiteboard({
             </MainMenu.Group>
           </MainMenu>
         </Excalidraw>
-        <AIChatPanel excalidrawAPI={excalidrawAPI} />
+        {isAuthenticated &&
+          <AIChatPanel excalidrawAPI={excalidrawAPI} />
+        }
         <RemoteCursors excalidrawAPI={excalidrawAPI} />
         {/* Conflict Resolution Panel */}
         <ConflictResolutionPanel

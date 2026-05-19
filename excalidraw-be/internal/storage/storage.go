@@ -3,19 +3,26 @@ package storage
 import (
 	"context"
 	"fmt"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 	"io"
 	"log/slog"
+	"net/http"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 type StorageClient struct {
-	client   *minio.Client
+	client   *s3.Client
+	presign  *s3.PresignClient
 	bucket   string
 	endpoint string
 	public   bool
 }
+
 type StorageConfig struct {
 	Endpoint  string
 	AccessKey string
@@ -27,83 +34,162 @@ type StorageConfig struct {
 }
 
 func NewStorageClient(cfg StorageConfig) (*StorageClient, error) {
-	client, err := minio.New(cfg.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-		Region: cfg.Region,
-		Secure: cfg.UseSSL,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create storage client: %w", err)
+	scheme := "http"
+	if cfg.UseSSL {
+		scheme = "https"
 	}
+	endpointURL := fmt.Sprintf("%s://%s", scheme, cfg.Endpoint)
+
+	awsCfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(cfg.Region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			cfg.AccessKey, cfg.SecretKey, "",
+		)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(endpointURL)
+		o.UsePathStyle = true
+	})
+
+	presignClient := s3.NewPresignClient(client)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	exists, err := client.BucketExists(ctx, cfg.Bucket)
+
+	// Check if bucket exists
+	_, err = client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(cfg.Bucket),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to check bucket: %w", err)
-	}
-	if !exists {
-		if err := client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{Region: cfg.Region}); err != nil {
-			return nil, fmt.Errorf("failed to create bucket: %w", err)
+		// Bucket doesn't exist, create it
+		_, createErr := client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: aws.String(cfg.Bucket),
+			CreateBucketConfiguration: &types.CreateBucketConfiguration{
+				LocationConstraint: types.BucketLocationConstraint(cfg.Region),
+			},
+		})
+		if createErr != nil {
+			return nil, fmt.Errorf("failed to create bucket: %w", createErr)
 		}
 		slog.Info("Created storage bucket", "bucket", cfg.Bucket)
 	}
+
 	slog.Info("Storage client connected", "endpoint", cfg.Endpoint, "bucket", cfg.Bucket)
 	return &StorageClient{
 		client:   client,
+		presign:  presignClient,
 		bucket:   cfg.Bucket,
 		endpoint: cfg.Endpoint,
 		public:   cfg.Public,
 	}, nil
 }
+
 func (s *StorageClient) Upload(ctx context.Context, key string, reader io.Reader, size int64, contentType string) error {
-	opts := minio.PutObjectOptions{
-		ContentType: contentType,
-		UserMetadata: map[string]string{
-			"x-amz-acl": "public-read",
-		},
+	input := &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(key),
+		Body:          reader,
+		ContentLength: aws.Int64(size),
+		ContentType:   aws.String(contentType),
+		ACL:           types.ObjectCannedACLPublicRead,
 	}
-	info, err := s.client.PutObject(ctx, s.bucket, key, reader, size, opts)
+
+	_, err := s.client.PutObject(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
-	slog.Info("File uploaded", "key", key, "size", info.Size, "etag", info.ETag)
+
+	slog.Info("File uploaded", "key", key, "size", size)
 	return nil
 }
-func (s *StorageClient) Download(ctx context.Context, key string) (*minio.Object, error) {
-	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+
+func (s *StorageClient) Download(ctx context.Context, key string) (io.ReadCloser, error) {
+	output, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to download file: %w", err)
 	}
-	return obj, nil
+	return output.Body, nil
 }
+
 func (s *StorageClient) Delete(ctx context.Context, key string) error {
-	err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
 	if err != nil {
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
 	slog.Info("File deleted", "key", key)
 	return nil
 }
+
 func (s *StorageClient) GetURL(key string) string {
 	if s.public {
 		return fmt.Sprintf("http://%s/%s/%s", s.endpoint, s.bucket, key)
 	}
 	return fmt.Sprintf("http://%s/%s/%s", s.endpoint, s.bucket, key)
 }
+
 func (s *StorageClient) PresignedGetURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
-	u, err := s.client.PresignedGetObject(ctx, s.bucket, key, expiry, nil)
+	output, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}, s3.WithPresignExpires(expiry))
 	if err != nil {
 		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
 	}
-	return u.String(), nil
+	return output.URL, nil
 }
-func (s *StorageClient) StatObject(ctx context.Context, key string) (minio.ObjectInfo, error) {
-	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+
+type ObjectInfo struct {
+	Key          string
+	Size         int64
+	ContentType  string
+	ETag         string
+	LastModified time.Time
+}
+
+func (s *StorageClient) StatObject(ctx context.Context, key string) (ObjectInfo, error) {
+	output, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
 	if err != nil {
-		return minio.ObjectInfo{}, fmt.Errorf("failed to stat object: %w", err)
+		return ObjectInfo{}, fmt.Errorf("failed to stat object: %w", err)
 	}
-	return info, nil
+
+	contentType := ""
+	if output.ContentType != nil {
+		contentType = *output.ContentType
+	}
+	etag := ""
+	if output.ETag != nil {
+		etag = *output.ETag
+	}
+	var lastModified time.Time
+	if output.LastModified != nil {
+		lastModified = *output.LastModified
+	}
+
+	return ObjectInfo{
+		Key:          key,
+		Size:         aws.ToInt64(output.ContentLength),
+		ContentType:  contentType,
+		ETag:         etag,
+		LastModified: lastModified,
+	}, nil
 }
+
 func (s *StorageClient) Close() {
 	slog.Info("Storage client closed")
 }
+
+// httpClient is kept for potential custom transport needs
+var _ http.RoundTripper = http.DefaultTransport

@@ -124,6 +124,13 @@ func (fh *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
+	info, err := fh.storage.StatObject(ctx, storageKey)
+	if err != nil {
+		slog.Error("Failed to stat file", "error", err, "key", storageKey)
+		writeJSONError(w, http.StatusNotFound, "File not found", "file_not_found")
+		return
+	}
+
 	obj, err := fh.storage.Download(ctx, storageKey)
 	if err != nil {
 		slog.Error("Failed to download file", "error", err, "key", storageKey)
@@ -132,15 +139,9 @@ func (fh *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 	defer obj.Close()
 
-	info, err := obj.Stat()
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Failed to get file info", "stat_failed")
-		return
-	}
-
 	contentType := "application/octet-stream"
-	if ct, ok := info.Metadata["Content-Type"]; ok && len(ct) > 0 {
-		contentType = ct[0]
+	if info.ContentType != "" {
+		contentType = info.ContentType
 	}
 
 	w.Header().Set("Content-Type", contentType)

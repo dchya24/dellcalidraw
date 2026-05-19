@@ -959,16 +959,14 @@ export default function Whiteboard({
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} excalidrawAPI={excalidrawAPI} />
 
       <div className="flex-1 relative z-0">
-        {import.meta.env.SHOW_TOOLBAR &&
-          <Toolbar
-            excalidrawAPI={excalidrawAPI}
-            onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-            username={username}
-            isAuthenticated={isAuthenticated}
-            onOpenRoomSettings={handleOpenRoomSettings}
-            onSaveToCloud={handleSaveToCloud}
-          />
-        }
+        <Toolbar
+          excalidrawAPI={excalidrawAPI}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          username={username}
+          isAuthenticated={isAuthenticated}
+          onOpenRoomSettings={handleOpenRoomSettings}
+          onSaveToCloud={handleSaveToCloud}
+        />
 
         {floatingTabOpen && (
           <FloatingTab

@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	AppEnv    string          `mapstructure:"app_env"`
 	Server    ServerConfig    `mapstructure:"server"`
 	WebSocket WebSocketConfig `mapstructure:"websocket"`
 	Room      RoomConfig      `mapstructure:"room"`
@@ -19,6 +20,11 @@ type Config struct {
 	AI        AIConfig        `mapstructure:"ai"`
 	Log       LogConfig       `mapstructure:"log"`
 	CORS      CORSConfig      `mapstructure:"cors"`
+}
+
+// IsDevelopment returns true if running in development mode
+func (c *Config) IsDevelopment() bool {
+	return c.AppEnv == "development" || c.AppEnv == "dev"
 }
 
 type ServerConfig struct {
@@ -185,6 +191,9 @@ func bindEnvVars() {
 	_ = viper.BindEnv("log.level", "EXCALIDRAW_LOG_LEVEL")
 	_ = viper.BindEnv("log.format", "EXCALIDRAW_LOG_FORMAT")
 
+	// App Environment
+	_ = viper.BindEnv("app_env", "APP_ENV")
+
 	// CORS
 	_ = viper.BindEnv("cors.allowed_origins", "EXCALIDRAW_CORS_ALLOWED_ORIGINS")
 	_ = viper.BindEnv("cors.allowed_methods", "EXCALIDRAW_CORS_ALLOWED_METHODS")
@@ -247,6 +256,9 @@ func setDefaults() {
 	// Log defaults
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.format", "json")
+
+	// App Environment defaults
+	viper.SetDefault("app_env", "development")
 
 	// CORS defaults
 	viper.SetDefault("cors.allowed_origins", []string{"http://localhost:3000", "http://localhost:5173"})

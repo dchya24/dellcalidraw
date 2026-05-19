@@ -146,6 +146,8 @@ export async function sendChatMessage(options: ChatOptions): Promise<void> {
       throw new Error("No response body for SSE stream");
     }
 
+    console.log('reader', reader);
+
     const decoder = new TextDecoder();
     let buffer = "";
 
@@ -164,15 +166,18 @@ export async function sendChatMessage(options: ChatOptions): Promise<void> {
 
         reader.read().then(
           (result) => {
-            console.log('result', result)
+            console.log('result reader', result)
             clearTimeout(timeout);
             resolve(result);
           },
           (err) => {
+            console.log('reader error', err)
             clearTimeout(timeout);
             reject(err);
           }
-        );
+        ).catch((err) => {
+          console.log('reader catch', err)
+        });
       });
 
       let result;
@@ -183,6 +188,9 @@ export async function sendChatMessage(options: ChatOptions): Promise<void> {
         if (combinedSignal.aborted) break;
         throw err;
       }
+
+      console.log('result readWithTimeout', result)
+
 
       const { done, value } = result;
       if (done) {

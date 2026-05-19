@@ -50,6 +50,8 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const trackedToolCalls = useRef<ToolCall[]>([]);
   const trackedElementIds = useRef<string[]>([]);
+  const [hasError, setHasError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   // Initialize conversation when tab changes
   useEffect(() => {
@@ -304,15 +306,21 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
             }
             break;
           }
+          case 'error': {
+            setHasError(true);
+            setErrorMessage(event.message);
+            updateLastMessage(currentTabId, assistantMsgId, { content: event.message });
+            break;
+          }
         }
       },
       onError: (error) => {
         trackedToolCalls.current = [];
         trackedElementIds.current = [];
-        updateLastMessage(currentTabId, assistantMsgId, {
-          content: `❌ Error: ${error.message}`,
-          timestamp: Date.now(),
-        });
+        console.log('error sendChatMessage', error)
+        setHasError(true);
+        setErrorMessage(error.message);
+        updateLastMessage(currentTabId, assistantMsgId, { content: error.message });
       },
       onComplete: () => {
         trackedToolCalls.current = [];
@@ -332,6 +340,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
     saveTabState,
     updateLastMessage,
     excalidrawAPI,
+    activeModel
   ]);
 
   // Handle keyboard shortcuts
@@ -398,7 +407,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
   }
 
   return (
-    <div className="fixed bottom-16 right-4 w-96 h-125 max-h-[70vh] z-50 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+    <div className="fixed bottom-16 right-4 w-3/12 h-125 max-h-[70vh] z-50 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
       style={{
         background: "var(--bg-color, white)",
         border: "1px solid var(--border-color, #e5e7eb)",
@@ -576,6 +585,16 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
         className="p-3 border-t"
         style={{ borderColor: "var(--border-color, #e5e7eb)" }}
       >
+        {/* with button close */}
+        {hasError && (
+          <div className="text-red-500 mb-2 flex items-center gap-2">
+            <span>{errorMessage}</span>
+            <button onClick={() => {
+              setHasError(false);
+              setErrorMessage(null);
+            }} className="text-xs px-3 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer">Close</button>
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <textarea
             ref={inputRef}

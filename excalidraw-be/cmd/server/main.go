@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -16,8 +17,8 @@ import (
 	"github.com/go-chi/cors"
 	"go.uber.org/zap"
 
-	"github.com/you/excalidraw-be/internal/auth"
 	"github.com/you/excalidraw-be/internal/ai"
+	"github.com/you/excalidraw-be/internal/auth"
 	"github.com/you/excalidraw-be/internal/config"
 	"github.com/you/excalidraw-be/internal/database"
 	appmiddleware "github.com/you/excalidraw-be/internal/middleware"
@@ -129,6 +130,14 @@ func main() {
 			)
 		}
 		aiHandler = ai.NewHandler(provider)
+		aiHandler.SetProviderName(cfg.AI.Provider)
+
+		// Enable request logging to PostgreSQL (development only)
+		if cfg.IsDevelopment() && dbClient != nil {
+			aiLogRepo := database.NewAIRequestLogRepository(dbClient.DB())
+			aiHandler.SetRequestLogger(&aiRequestLoggerAdapter{repo: aiLogRepo})
+			logger.Info("AI request logging to PostgreSQL enabled (development mode)")
+		}
 	}
 
 	// Setup router
@@ -227,6 +236,14 @@ func main() {
 				})
 			})
 			aiHandler.RegisterRoutes(r)
+
+			// Development-only log endpoints
+			if cfg.IsDevelopment() && dbClient != nil {
+				aiLogRepo := database.NewAIRequestLogRepository(dbClient.DB())
+				r.Get("/logs", aiLogsHandler(aiLogRepo))
+				r.Get("/logs/stats", aiLogsStatsHandler(aiLogRepo))
+				r.Delete("/logs/cleanup", aiLogsCleanupHandler(aiLogRepo))
+			}
 		})
 	}
 
@@ -341,4 +358,120 @@ func initLogger(cfg config.LogConfig) (*zap.Logger, error) {
 
 func middlewareLogger(next http.Handler) http.Handler {
 	return appmiddleware.Logger(next)
+}
+
+// ─── AI Request Logger Adapter ─────────────────────────────────────────────
+
+// aiRequestLoggerAdapter adapts database.AIRequestLogRepository to ai.RequestLogger
+// This avoids importing the ai package from database or vice versa
+type aiRequestLoggerAdapter struct {
+	repo *database.AIRequestLogRepository
+}
+
+func (a *aiRequestLoggerAdapter) LogRequest(entry *ai.RequestLogEntry) {
+	toolCallsJSON, _ := json.Marshal(entry.ToolCalls)
+
+	dbLog := &database.AIRequestLog{
+		RequestID:         entry.RequestID,
+		Model:             entry.Model,
+		Provider:          entry.Provider,
+		UserMessage:       entry.UserMessage,
+		SystemPrompt:      entry.SystemPrompt,
+		CanvasElementCount: entry.CanvasElementCount,
+		ToolsCount:        entry.ToolsCount,
+		ResponseText:      entry.ResponseText,
+		ToolCalls:         toolCallsJSON,
+		FinishReason:      entry.FinishReason,
+		RequestDurationMs: entry.RequestDurationMs,
+		PromptTokens:      entry.PromptTokens,
+		CompletionTokens:  entry.CompletionTokens,
+		TotalTokens:       entry.TotalTokens,
+		Status:            entry.Status,
+		ErrorMessage:      entry.ErrorMessage,
+		ClientIP:          entry.ClientIP,
+		UserAgent:         entry.UserAgent,
+	}
+
+	if err := a.repo.Insert(dbLog); err != nil {
+		slog.Error("[AI Log] Failed to insert request log", "error", err)
+		return
+	}
+
+	// Copy back the generated ID and timestamps
+	entry.ID = dbLog.ID
+}
+
+func (a *aiRequestLoggerAdapter) UpdateLog(entry *ai.RequestLogEntry) {
+	toolCallsJSON, _ := json.Marshal(entry.ToolCalls)
+
+	dbLog := &database.AIRequestLog{
+		ID:                entry.ID,
+		ResponseText:      entry.ResponseText,
+		ToolCalls:         toolCallsJSON,
+		FinishReason:      entry.FinishReason,
+		RequestDurationMs: entry.RequestDurationMs,
+		PromptTokens:      entry.PromptTokens,
+		CompletionTokens:  entry.CompletionTokens,
+		TotalTokens:       entry.TotalTokens,
+		Status:            entry.Status,
+		ErrorMessage:      entry.ErrorMessage,
+	}
+
+	if err := a.repo.Update(dbLog); err != nil {
+		slog.Error("[AI Log] Failed to update request log", "error", err, "log_id", entry.ID)
+	}
+}
+
+// ─── AI Log API Handlers (Development Only) ───────────────────────────────
+
+func aiLogsHandler(repo *database.AIRequestLogRepository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limit := 50
+		if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 200 {
+				limit = parsed
+			}
+		}
+
+		logs, err := repo.GetRecent(limit)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"logs":  logs,
+			"count": len(logs),
+		})
+	}
+}
+
+func aiLogsStatsHandler(repo *database.AIRequestLogRepository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		stats, err := repo.GetStats()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+	}
+}
+
+func aiLogsCleanupHandler(repo *database.AIRequestLogRepository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		deleted, err := repo.CleanupOldLogs(7 * 24 * time.Hour)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"deleted": deleted,
+			"message": fmt.Sprintf("Cleaned up %d old log entries", deleted),
+		})
+	}
 }

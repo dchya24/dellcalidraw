@@ -8,14 +8,56 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
+
+// RequestLogger is an interface for logging AI requests (development only)
+type RequestLogger interface {
+	LogRequest(log *RequestLogEntry)
+	UpdateLog(log *RequestLogEntry)
+}
+
+// RequestLogEntry holds data to be logged
+// This is a duplicate-free struct that maps to database.AIRequestLog
+// without importing the database package directly
+type RequestLogEntry struct {
+	ID                int64         `json:"id,omitempty"`
+	RequestID         string        `json:"request_id"`
+	Model             string        `json:"model"`
+	Provider          string        `json:"provider"`
+	UserMessage       string        `json:"user_message"`
+	SystemPrompt      string        `json:"system_prompt,omitempty"`
+	CanvasElementCount int          `json:"canvas_element_count"`
+	ToolsCount        int           `json:"tools_count"`
+	ResponseText      string        `json:"response_text,omitempty"`
+	ToolCalls         []ToolCallLog `json:"tool_calls,omitempty"`
+	FinishReason      string        `json:"finish_reason,omitempty"`
+	RequestDurationMs int           `json:"request_duration_ms,omitempty"`
+	PromptTokens      int           `json:"prompt_tokens,omitempty"`
+	CompletionTokens  int           `json:"completion_tokens,omitempty"`
+	TotalTokens       int           `json:"total_tokens,omitempty"`
+	Status            string        `json:"status"`
+	ErrorMessage      string        `json:"error_message,omitempty"`
+	ClientIP          string        `json:"client_ip,omitempty"`
+	UserAgent         string        `json:"user_agent,omitempty"`
+}
+
+// ToolCallLog represents a logged tool call (for JSON serialization)
+type ToolCallLog struct {
+	ID   string                 `json:"id"`
+	Name string                 `json:"name"`
+	Args map[string]interface{} `json:"arguments"`
+}
 
 // Handler holds AI HTTP handlers
 type Handler struct {
-	provider LLMProvider
-	tools    []Tool
+	provider      LLMProvider
+	tools         []Tool
+	requestLogger RequestLogger // nil if not in development mode
+	providerName  string
 }
 
 // NewHandler creates new AI handler
@@ -24,6 +66,16 @@ func NewHandler(provider LLMProvider) *Handler {
 		provider: provider,
 		tools:    GetDefaultTools(),
 	}
+}
+
+// SetRequestLogger sets the request logger (development only)
+func (h *Handler) SetRequestLogger(logger RequestLogger) {
+	h.requestLogger = logger
+}
+
+// SetProviderName sets the provider name for logging
+func (h *Handler) SetProviderName(name string) {
+	h.providerName = name
 }
 
 // RegisterRoutes registers AI routes
@@ -97,9 +149,59 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("[AI Handler] Processing chat request", "message", req.Message, "model", model, "canvas_elements", len(canvasElements))
 
+	// Start request logging (development only)
+	requestID := uuid.New().String()
+	startTime := time.Now()
+	var logEntry *RequestLogEntry
+
+	if h.requestLogger != nil {
+		logEntry = &RequestLogEntry{
+			RequestID:         requestID,
+			Model:             model,
+			Provider:          h.providerName,
+			UserMessage:       req.Message,
+			SystemPrompt:      truncate(BuildSystemPrompt(canvasElements), 5000),
+			CanvasElementCount: len(canvasElements),
+			ToolsCount:        len(h.tools),
+			Status:            "pending",
+			ClientIP:          r.RemoteAddr,
+			UserAgent:         r.UserAgent(),
+		}
+		h.requestLogger.LogRequest(logEntry)
+		slog.Info("[AI Log] Request logged", "request_id", requestID, "log_id", logEntry.ID)
+	}
+
 	// Stream response via SSE
 	ctx := r.Context()
+	// Track response data for logging
+	var responseText strings.Builder
+	var toolCalls []ToolCallLog
+
 	sendEvent := func(event SSEEvent) error {
+		slog.Info("[AI Handler] Sending event", "type", event.Type, "content", event.Content)
+
+		// Accumulate response data for logging
+		if h.requestLogger != nil {
+			switch event.Type {
+			case "text":
+				responseText.WriteString(event.Content)
+			case "tool_call":
+				args, _ := event.Result.(map[string]interface{})
+				if args == nil {
+					args = map[string]interface{}{}
+				}
+				toolCalls = append(toolCalls, ToolCallLog{
+					ID:   event.ID,
+					Name: event.Name,
+					Args: args,
+				})
+			case "error":
+				if logEntry != nil {
+					logEntry.Status = "error"
+					logEntry.ErrorMessage = event.Content
+				}
+			}
+		}
 		data, err := json.Marshal(event)
 		if err != nil {
 			return fmt.Errorf("marshal event: %w", err)
@@ -126,6 +228,15 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 				Content: fmt.Sprintf("AI provider error: %v", err),
 			})
 		}
+
+		// Finalize log with error
+		if h.requestLogger != nil && logEntry != nil {
+			logEntry.Status = "error"
+			logEntry.ErrorMessage = truncate(err.Error(), 2000)
+			logEntry.RequestDurationMs = int(time.Since(startTime).Milliseconds())
+			logEntry.ResponseText = responseText.String()
+			h.requestLogger.UpdateLog(logEntry)
+		}
 		return
 	}
 
@@ -135,6 +246,21 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		Type:    "done",
 		Content: "Generation complete",
 	})
+
+	// Finalize request log (development only)
+	if h.requestLogger != nil && logEntry != nil {
+		logEntry.Status = "success"
+		logEntry.RequestDurationMs = int(time.Since(startTime).Milliseconds())
+		logEntry.ResponseText = responseText.String()
+		logEntry.ToolCalls = toolCalls
+		logEntry.FinishReason = "stop"
+		h.requestLogger.UpdateLog(logEntry)
+		slog.Info("[AI Log] Request completed",
+			"request_id", requestID,
+			"duration_ms", logEntry.RequestDurationMs,
+			"tool_calls", len(toolCalls),
+		)
+	}
 
 	// Final flush to ensure all data is sent
 	if f, ok := w.(http.Flusher); ok {
@@ -177,4 +303,12 @@ func GetRequestID(ctx context.Context) string {
 		return id
 	}
 	return ""
+}
+
+// truncate truncates a string to maxLen characters
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

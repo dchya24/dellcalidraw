@@ -373,15 +373,34 @@ export const useWhiteboardStore = create<AppStore>()(
         set({ isLoading: true, syncStatus: "syncing" as const });
 
         try {
+          // 1. Save current local-only files before fetching cloud data
+          const currentFiles = get().files;
+          const localOnlyFiles = currentFiles.filter(f => !f.isCloud);
+
+          // 2. Fetch cloud files
           const response = await fileService.listFiles();
           const cloudFiles: WhiteboardFile[] = response.files.map(
             (file: UserFile) => {
-              const tab = createEmptyTab("Sheet 1");
+              // If cloud file has tabs data, reconstruct them
+              const tabs = file.tabs && file.tabs.length > 0
+                ? file.tabs.map((t) => ({
+                    id: nanoid(),
+                    title: t.title,
+                    roomId: t.roomId || nanoid(10),
+                    data: {
+                      elements: (t.elements || []) as readonly OrderedExcalidrawElement[],
+                      appState: (t.appState || {}) as Partial<AppState>,
+                      files: (t.files || {}) as Record<string, unknown>,
+                    },
+                    lastModified: Date.now(),
+                  }))
+                : [createEmptyTab("Sheet 1")];
+
               return {
                 id: file.id,
                 name: file.name,
-                tabs: [tab],
-                activeTabId: tab.id,
+                tabs,
+                activeTabId: tabs[0].id,
                 createdAt: new Date(file.createdAt).getTime(),
                 lastModified: new Date(file.updatedAt).getTime(),
                 isCloud: true,
@@ -390,14 +409,23 @@ export const useWhiteboardStore = create<AppStore>()(
             }
           );
 
+          // 3. Merge: cloud files first, then local-only files
+          const merged = [...cloudFiles, ...localOnlyFiles];
+
           set({
-            files: cloudFiles.length > 0 ? cloudFiles : [createEmptyFile("Untitled")],
+            files: merged.length > 0 ? merged : [createEmptyFile("Untitled")],
             isLoading: false,
             syncStatus: "synced" as const,
             lastSyncedAt: Date.now(),
           });
+
+          // 4. Migrate local-only files to cloud in background
+          if (localOnlyFiles.length > 0) {
+            migrateLocalFiles(localOnlyFiles);
+          }
         } catch (error) {
           console.error("Failed to sync from cloud:", error);
+          // Keep existing data as fallback
           set({ isLoading: false, syncStatus: "error" as const });
         }
       },
@@ -503,3 +531,58 @@ useAuthStore.subscribe((state, prevState) => {
     }
   }
 });
+
+// Helper: migrate local-only files to cloud after login
+async function migrateLocalFiles(localFiles: WhiteboardFile[]) {
+  try {
+    const migrationPayload = localFiles.map(f => ({
+      name: f.name,
+      activeTabId: f.activeTabId,
+      tabs: f.tabs.map(t => ({
+        title: t.title,
+        roomId: t.roomId,
+        elements: [...t.data.elements] as unknown[],
+        appState: t.data.appState as Record<string, unknown>,
+        files: t.data.files as Record<string, unknown>,
+      })),
+    }));
+
+    const result = await fileService.migrateFiles(migrationPayload);
+
+    // After successful migration, update local state to mark files as cloud
+    const state = useWhiteboardStore.getState();
+    const updatedFiles = state.files.map(f => {
+      if (f.isCloud) return f;
+
+      // Match by name + tab count for reliability
+      const migratedFile = result.files.find(mf =>
+        mf.name === f.name && mf.tabs.length === f.tabs.length
+      );
+      if (!migratedFile) return f;
+
+      // Reconstruct tabs with cloud data
+      const tabs = migratedFile.tabs.map((t, idx) => ({
+        ...(f.tabs[idx] || createEmptyTab(t.title)),
+        roomId: t.roomId || f.tabs[idx]?.roomId || nanoid(10),
+      }));
+
+      return {
+        ...f,
+        id: migratedFile.id,
+        isCloud: true,
+        cloudId: migratedFile.id,
+        tabs,
+        activeTabId: f.activeTabId,
+      };
+    });
+
+    useWhiteboardStore.setState({
+      files: updatedFiles,
+      syncStatus: "synced" as const,
+      lastSyncedAt: Date.now(),
+    });
+  } catch (error) {
+    console.error("Failed to migrate local files to cloud:", error);
+    // Files stay as local-only, still usable
+  }
+}

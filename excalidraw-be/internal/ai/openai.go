@@ -215,6 +215,8 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	slog.Info("[AI] Request body", "body", string(body))
+
 	// Log shortened request for debugging
 	reqURL := fmt.Sprintf("%s/chat/completions", strings.TrimSuffix(p.BaseURL, "/"))
 	slog.Info("[AI] Request", "url", reqURL, "model", model, "msgs", len(messages), "tools", len(tools))
@@ -248,11 +250,11 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 	}
 
 	slog.Info("[OpenAI Stream] Starting to stream response...")
-	
+
 	// Track response for logging (pre-allocate)
 	var fullResponse strings.Builder
 	fullResponse.Grow(4096)
-	
+
 	// Stream directly from response body (don't read it first!)
 	pendingCalls := make(map[int]*pendingToolCall)
 	lineBuf := make([]byte, 0, 4096)
@@ -274,6 +276,8 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 				lineBuf = lineBuf[lineEnd+1:]
 				line = strings.TrimSpace(line)
 
+					slog.Info("[AI] Stream line", "line", line)
+
 				if !strings.HasPrefix(line, "data: ") {
 					continue
 				}
@@ -290,8 +294,9 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 				}
 
 				// Log each SSE event
-				fullResponse.WriteString(data + "\n")
-				
+				fullResponse.WriteString(data)
+				fullResponse.WriteByte('\n')
+
 				if err := p.processStreamChunk(data, pendingCalls, streamFunc); err != nil {
 					return err
 				}

@@ -10,6 +10,15 @@ function getBaseUrl(): string {
 }
 
 // User file types (frontend representation)
+export interface FileTab {
+  tabKey: string;
+  title: string;
+  roomId: string;
+  elements: unknown[];
+  appState: Record<string, unknown>;
+  files: Record<string, unknown>;
+}
+
 export interface UserFile {
   id: string;
   userId: string;
@@ -17,6 +26,7 @@ export interface UserFile {
   tabCount: number;
   createdAt: string;
   updatedAt: string;
+  tabs?: FileTab[];
 }
 
 class FileService {
@@ -108,6 +118,39 @@ class FileService {
   async deleteFile(fileId: string): Promise<{ fileId: string }> {
     return this.request(`/api/files/${fileId}`, {
       method: "DELETE",
+    });
+  }
+
+  // Migrate local files to cloud
+  async migrateFiles(files: Array<{
+    name: string;
+    activeTabId: string;
+    tabs: Array<{
+      title: string;
+      roomId: string;
+      elements: unknown[];
+      appState: Record<string, unknown>;
+      files: Record<string, unknown>;
+    }>;
+  }>): Promise<{ files: Array<UserFile & { tabs: FileTab[] }>; count: number }> {
+    return this.request("/api/files/migrate", {
+      method: "POST",
+      body: JSON.stringify({ files }),
+    });
+  }
+
+  // Save/update all tabs for a file
+  async saveFileTabs(fileId: string, tabs: Array<{
+    tabKey: string;
+    title: string;
+    roomId: string;
+    elements: unknown[];
+    appState: Record<string, unknown>;
+    files: Record<string, unknown>;
+  }>): Promise<{ success: boolean; count: number }> {
+    return this.request(`/api/files/${fileId}/tabs`, {
+      method: "PUT",
+      body: JSON.stringify({ tabs }),
     });
   }
 }

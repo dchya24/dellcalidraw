@@ -191,10 +191,12 @@ func main() {
 			fileMgmtHandler := NewFileManagementHandler(dbClient, authService)
 			r.Get("/api/files", fileMgmtHandler.ListUserFiles)
 			r.Post("/api/files", fileMgmtHandler.CreateUserFile)
+			r.Post("/api/files/migrate", fileMgmtHandler.MigrateLocalFiles)
 			r.Get("/api/files/{fileId}", fileMgmtHandler.GetUserFile)
 			r.Put("/api/files/{fileId}", fileMgmtHandler.UpdateUserFile)
 			r.Patch("/api/files/{fileId}/rename", fileMgmtHandler.RenameUserFile)
 			r.Delete("/api/files/{fileId}", fileMgmtHandler.DeleteUserFile)
+			r.Put("/api/files/{fileId}/tabs", fileMgmtHandler.SaveFileTabs)
 		})
 	}
 

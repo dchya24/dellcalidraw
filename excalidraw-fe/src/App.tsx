@@ -6,7 +6,6 @@ import ResetPasswordModal from "./components/ResetPasswordModal";
 import { getRoomIdFromURL } from "./utils/roomURL";
 import { roomService } from "./services/roomService";
 import { useAuthStore } from "./store/useAuthStore";
-import { useWhiteboardStore } from "./store/useWhiteboardStore";
 import { apiService } from "./services/api";
 import { tokenRefreshService } from "./services/tokenRefreshService";
 
@@ -55,12 +54,6 @@ function App() {
       tokenRefreshService.stop();
     };
   }, [isAuthenticated]);
-
-  // Load files based on auth state
-  useEffect(() => {
-    useWhiteboardStore.getState().loadFiles();
-  }, [isAuthenticated]);
-
 
   useEffect(() => {
     if (resetToken) {

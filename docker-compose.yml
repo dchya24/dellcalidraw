@@ -1,79 +1,51 @@
-version: '3.8'
+# Production-style compose for the application services only.
+#
+# PostgreSQL and MinIO/S3 are intentionally NOT defined here. They are
+# expected to be provided externally (managed services, a standalone
+# MinIO/PostgreSQL host, RDS, S3, R2, etc.). The backend reads connection
+# info from environment variables which can be supplied via:
+#   - host environment when running `docker compose up`
+#   - a `.env` file in the repository root (auto-loaded by Compose)
+#   - a CI/CD secret store
+#
+# See `.env.example` for the full list of variables.
 
 services:
-  # PostgreSQL database
-  postgres:
-    image: postgres:16-alpine
-    container_name: excalidraw-postgres
-    environment:
-      POSTGRES_USER: excalidraw
-      POSTGRES_PASSWORD: excalidraw
-      POSTGRES_DB: excalidraw
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    restart: unless-stopped
-    networks:
-      - excalidraw-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U excalidraw"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # MinIO file storage
-  minio:
-    image: minio/minio:latest
-    container_name: excalidraw-minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio-data:/data
-    restart: unless-stopped
-    networks:
-      - excalidraw-network
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Backend service
   backend:
+    image: ${BACKEND_IMAGE:-excalidraw-be:latest}
     build:
       context: ./excalidraw-be
       dockerfile: Dockerfile
     container_name: excalidraw-backend
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     environment:
+      # Server
       - PORT=8080
       - HOST=0.0.0.0
-      - EXCALIDRAW_DATABASE_HOST=postgres
-      - EXCALIDRAW_DATABASE_PORT=5432
-      - EXCALIDRAW_DATABASE_USER=excalidraw
-      - EXCALIDRAW_DATABASE_PASSWORD=excalidraw
-      - EXCALIDRAW_DATABASE_DBNAME=excalidraw
-      - EXCALIDRAW_DATABASE_SSLMODE=disable
-      - EXCALIDRAW_STORAGE_ENDPOINT=minio:9000
-      - EXCALIDRAW_STORAGE_ACCESS_KEY=minioadmin
-      - EXCALIDRAW_STORAGE_SECRET_KEY=minioadmin
-      - EXCALIDRAW_STORAGE_BUCKET=excalidraw-files
-      - EXCALIDRAW_STORAGE_REGION=us-east-1
-      - EXCALIDRAW_STORAGE_USE_SSL=false
+      - APP_ENV=${APP_ENV:-production}
+
+      # Database (PostgreSQL) - required, no safe default for host
+      - EXCALIDRAW_DATABASE_HOST=${EXCALIDRAW_DATABASE_HOST}
+      - EXCALIDRAW_DATABASE_PORT=${EXCALIDRAW_DATABASE_PORT:-5432}
+      - EXCALIDRAW_DATABASE_USER=${EXCALIDRAW_DATABASE_USER}
+      - EXCALIDRAW_DATABASE_PASSWORD=${EXCALIDRAW_DATABASE_PASSWORD}
+      - EXCALIDRAW_DATABASE_DBNAME=${EXCALIDRAW_DATABASE_DBNAME:-excalidraw}
+      - EXCALIDRAW_DATABASE_SSLMODE=${EXCALIDRAW_DATABASE_SSLMODE:-require}
+
+      # Object storage (MinIO/S3-compatible) - required
+      - EXCALIDRAW_STORAGE_ENDPOINT=${EXCALIDRAW_STORAGE_ENDPOINT}
+      - EXCALIDRAW_STORAGE_ACCESS_KEY=${EXCALIDRAW_STORAGE_ACCESS_KEY}
+      - EXCALIDRAW_STORAGE_SECRET_KEY=${EXCALIDRAW_STORAGE_SECRET_KEY}
+      - EXCALIDRAW_STORAGE_BUCKET=${EXCALIDRAW_STORAGE_BUCKET:-excalidraw-files}
+      - EXCALIDRAW_STORAGE_REGION=${EXCALIDRAW_STORAGE_REGION:-us-east-1}
+      - EXCALIDRAW_STORAGE_USE_SSL=${EXCALIDRAW_STORAGE_USE_SSL:-true}
+    # Optional: load additional/secret values from a backend-local file.
+    # Comment this out if you supply everything via the host environment
+    # or a secrets manager.
     env_file:
       - ./excalidraw-be/.env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
     restart: unless-stopped
     networks:
       - excalidraw-network
@@ -86,14 +58,16 @@ services:
 
   # Frontend service
   frontend:
+    image: ${FRONTEND_IMAGE:-excalidraw-fe:latest}
     build:
       context: ./excalidraw-fe
       dockerfile: Dockerfile
     container_name: excalidraw-frontend
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3000}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - excalidraw-network
@@ -107,8 +81,3 @@ services:
 networks:
   excalidraw-network:
     driver: bridge
-
-volumes:
-  postgres-data:
-  backend-data:
-  minio-data:

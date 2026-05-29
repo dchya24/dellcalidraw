@@ -35,6 +35,13 @@ interface AppStore {
   isLoading: boolean;
   syncStatus: "idle" | "syncing" | "synced" | "error";
   lastSyncedAt: number | null;
+  /**
+   * Local guest files awaiting a user decision (merge to cloud or discard).
+   * Set by `loadFiles` when the user logs in and the cloud account already
+   * has files. The UI is expected to render a dialog and call
+   * `confirmMigration` / `discardMigration`.
+   */
+  pendingMigration: WhiteboardFile[] | null;
 
   // File operations
   createFile: (name?: string) => Promise<void>;
@@ -59,6 +66,9 @@ interface AppStore {
   // Cloud sync operations
   loadFiles: () => Promise<void>;
   syncToCloud: (file: WhiteboardFile) => Promise<void>;
+  confirmMigration: () => Promise<void>;
+  discardMigration: () => void;
+  resetToGuestState: () => void;
 
   // Getters
   getActiveFile: () => WhiteboardFile | undefined;
@@ -111,6 +121,7 @@ export const useWhiteboardStore = create<AppStore>()(
       isLoading: false,
       syncStatus: "idle" as const,
       lastSyncedAt: null,
+      pendingMigration: null,
 
       // File operations
       createFile: async (name?: string) => {
@@ -373,28 +384,30 @@ export const useWhiteboardStore = create<AppStore>()(
         set({ isLoading: true, syncStatus: "syncing" as const });
 
         try {
-          // 1. Save current local-only files before fetching cloud data
+          // 1. Capture current local-only files before fetching cloud data
           const currentFiles = get().files;
-          const localOnlyFiles = currentFiles.filter(f => !f.isCloud);
+          const localOnlyFiles = currentFiles.filter((f) => !f.isCloud);
 
           // 2. Fetch cloud files
           const response = await fileService.listFiles();
           const cloudFiles: WhiteboardFile[] = response.files.map(
             (file: UserFile) => {
               // If cloud file has tabs data, reconstruct them
-              const tabs = file.tabs && file.tabs.length > 0
-                ? file.tabs.map((t) => ({
-                    id: nanoid(),
-                    title: t.title,
-                    roomId: t.roomId || nanoid(10),
-                    data: {
-                      elements: (t.elements || []) as readonly OrderedExcalidrawElement[],
-                      appState: (t.appState || {}) as Partial<AppState>,
-                      files: (t.files || {}) as Record<string, unknown>,
-                    },
-                    lastModified: Date.now(),
-                  }))
-                : [createEmptyTab("Sheet 1")];
+              const tabs =
+                file.tabs && file.tabs.length > 0
+                  ? file.tabs.map((t) => ({
+                      id: nanoid(),
+                      title: t.title,
+                      roomId: t.roomId || nanoid(10),
+                      data: {
+                        elements: (t.elements ||
+                          []) as readonly OrderedExcalidrawElement[],
+                        appState: (t.appState || {}) as Partial<AppState>,
+                        files: (t.files || {}) as Record<string, unknown>,
+                      },
+                      lastModified: Date.now(),
+                    }))
+                  : [createEmptyTab("Sheet 1")];
 
               return {
                 id: file.id,
@@ -409,25 +422,99 @@ export const useWhiteboardStore = create<AppStore>()(
             }
           );
 
-          // 3. Merge: cloud files first, then local-only files
-          const merged = [...cloudFiles, ...localOnlyFiles];
-
-          set({
-            files: merged.length > 0 ? merged : [createEmptyFile("Untitled")],
-            isLoading: false,
-            syncStatus: "synced" as const,
-            lastSyncedAt: Date.now(),
-          });
-
-          // 4. Migrate local-only files to cloud in background
-          if (localOnlyFiles.length > 0) {
-            migrateLocalFiles(localOnlyFiles);
+          // 3. Decide what to do based on cloud + local state.
+          //
+          //  - cloud empty + local present  -> first-time/new account, auto-migrate.
+          //  - cloud present + local present -> ask user (Merge or Discard).
+          //  - cloud present + no local      -> just use cloud.
+          //  - both empty                    -> create one empty file.
+          if (cloudFiles.length === 0 && localOnlyFiles.length > 0) {
+            set({
+              files: localOnlyFiles,
+              activeFileId: localOnlyFiles[0].id,
+              isLoading: false,
+              syncStatus: "syncing" as const,
+              pendingMigration: null,
+            });
+            await migrateLocalFiles(localOnlyFiles);
+          } else if (cloudFiles.length > 0 && localOnlyFiles.length > 0) {
+            // Show cloud files only; stash local files for the dialog decision.
+            set({
+              files: cloudFiles,
+              activeFileId: cloudFiles[0].id,
+              isLoading: false,
+              syncStatus: "synced" as const,
+              lastSyncedAt: Date.now(),
+              pendingMigration: localOnlyFiles,
+            });
+          } else {
+            const finalFiles =
+              cloudFiles.length > 0 ? cloudFiles : [createEmptyFile("Untitled")];
+            set({
+              files: finalFiles,
+              activeFileId: finalFiles[0].id,
+              isLoading: false,
+              syncStatus: "synced" as const,
+              lastSyncedAt: Date.now(),
+              pendingMigration: null,
+            });
           }
         } catch (error) {
           console.error("Failed to sync from cloud:", error);
           // Keep existing data as fallback
           set({ isLoading: false, syncStatus: "error" as const });
         }
+      },
+
+      confirmMigration: async () => {
+        const { pendingMigration, files } = get();
+        if (!pendingMigration || pendingMigration.length === 0) {
+          set({ pendingMigration: null });
+          return;
+        }
+
+        // Add local files back into the visible list and migrate them.
+        set({
+          files: [...files, ...pendingMigration],
+          pendingMigration: null,
+          syncStatus: "syncing" as const,
+        });
+        await migrateLocalFiles(pendingMigration);
+      },
+
+      discardMigration: () => {
+        set({ pendingMigration: null });
+      },
+
+      resetToGuestState: () => {
+        // Strip every cloud-backed file from local storage. Keep any
+        // remaining local-only files so the user does not lose unsaved guest
+        // work that was created during the authenticated session.
+        const { files, activeFileId } = get();
+        const localFiles = files.filter((f) => !f.isCloud);
+
+        if (localFiles.length === 0) {
+          const fresh = createEmptyFile("Untitled");
+          set({
+            files: [fresh],
+            activeFileId: fresh.id,
+            isLoading: false,
+            syncStatus: "idle" as const,
+            lastSyncedAt: null,
+            pendingMigration: null,
+          });
+          return;
+        }
+
+        const stillThere = localFiles.find((f) => f.id === activeFileId);
+        set({
+          files: localFiles,
+          activeFileId: stillThere ? stillThere.id : localFiles[0].id,
+          isLoading: false,
+          syncStatus: "idle" as const,
+          lastSyncedAt: null,
+          pendingMigration: null,
+        });
       },
 
       syncToCloud: async (file: WhiteboardFile) => {
@@ -525,10 +612,15 @@ export const useWhiteboardStore = create<AppStore>()(
 
 // Auto-sync when auth state changes
 useAuthStore.subscribe((state, prevState) => {
-  if (state.isAuthenticated !== prevState.isAuthenticated) {
-    if (state.isAuthenticated) {
-      useWhiteboardStore.getState().loadFiles();
-    }
+  if (state.isAuthenticated === prevState.isAuthenticated) return;
+
+  if (state.isAuthenticated) {
+    useWhiteboardStore.getState().loadFiles();
+  } else {
+    // Manual logout or token-expired auto-logout. Drop cloud-backed files
+    // from local storage so a guest session cannot keep operating on
+    // someone else's data without a valid token.
+    useWhiteboardStore.getState().resetToGuestState();
   }
 });
 

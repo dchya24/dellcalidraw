@@ -31,6 +31,7 @@ interface AIChatStore {
   addMessage: (tabId: string, message: ChatMessage) => void;
   updateLastMessage: (tabId: string, messageId: string, updates: Partial<ChatMessage>) => void;
   clearConversation: (tabId: string) => void;
+  clearAllConversations: () => void;
 
   // UI
   togglePanel: () => void;
@@ -140,6 +141,15 @@ export const useAIChatStore = create<AIChatStore>()(
             ],
           },
         }));
+      },
+
+      clearAllConversations: () => {
+        set({
+          conversations: {},
+          activeTabId: null,
+          isLoading: false,
+          isStreaming: false,
+        });
       },
 
       togglePanel: () => {

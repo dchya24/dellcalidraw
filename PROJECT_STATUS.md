@@ -8,7 +8,7 @@
 
 ## 📊 Executive Summary
 
-**Overall Project Completion: ~88%**
+**Overall Project Completion: ~90%**
 
 Dellcalidraw is a real-time collaborative whiteboard application built with:
 - **Frontend:** React 18 + Vite 5 + TypeScript + Excalidraw 0.18
@@ -187,11 +187,19 @@ Per-room AES-256-GCM on top of TLS. Defense in depth, NOT end-to-end
 - 50+ concurrent users, 1000+ elements, 100+ rooms
 - Bottleneck identification, query optimization
 
-#### 6. Backup & Disaster Recovery
-**Effort:** 1–2 days
-- Postgres dump schedule
-- MinIO/S3 versioning + lifecycle
-- Restore runbook
+#### 5. Backups & Disaster Recovery ✅ DONE 2026-05-31
+Nightly Postgres dumps, gpg-encrypted (AES256), pushed to the same
+S3-compatible bucket the application uses. Opt-in via Compose `backup`
+profile.
+
+- `ops/backup/` — Alpine container with postgres-client, aws-cli, gpg, dcron
+- `ops/backup/backup.sh` — pg_dump → gzip → gpg → S3 + retention prune
+- `ops/backup/restore.sh` — S3 → gpg → gunzip → psql, gated by RESTORE_CONFIRM=YES
+- `docker-compose.yml` — `backup` service under `--profile backup`
+- `docs/BACKUPS.md` — full runbook including DR checklist
+
+Gate: requires `BACKUP_GPG_PASSPHRASE` in `.env`. Recommend pairing
+with bucket-level versioning + lifecycle for layered protection.
 
 ### Low Priority Enhancements
 - Idle detection (1–2 days)
@@ -367,6 +375,7 @@ See `DEPLOYMENT.md` for VPS deploy specifics.
 - ✅ CORS configuration
 - ✅ Parameterized SQL queries
 - ✅ Per-room AES-256-GCM WebSocket message encryption (Phase 11–12)
+- ✅ Encrypted Postgres backups to S3 (gpg AES256)
 
 ### Missing
 - ❌ File encryption at rest
@@ -374,7 +383,6 @@ See `DEPLOYMENT.md` for VPS deploy specifics.
 - ❌ HTTP rate limiting on non-AI endpoints
 - ❌ CSRF protection
 - ❌ Security headers (CSP, HSTS, etc.)
-- ❌ Backups / disaster recovery
 
 ---
 
@@ -384,10 +392,10 @@ See `DEPLOYMENT.md` for VPS deploy specifics.
 1. ✅ Documentation sweep
 2. ✅ AI Sprint 3 (Mermaid, auto_layout, token tracking)
 3. ✅ WebSocket encryption (Phase 11–12)
+4. ✅ Backups (Postgres + S3)
 
 **Following:**
-4. Verify Guest → Cloud sync end-to-end
-5. Backups (Postgres + S3)
+5. Verify Guest → Cloud sync end-to-end
 6. Production monitoring (Prometheus/Grafana/Sentry)
 7. Load testing
 8. File encryption at rest

@@ -78,6 +78,46 @@ services:
       retries: 3
       start_period: 10s
 
+  # Postgres backup service (Phase 12 hardening).
+  # Runs nightly pg_dump, encrypts with gpg (AES256), uploads to the same
+  # S3-compatible bucket under backups/postgres/, prunes old backups by
+  # retention window. Opt-in: only starts when included in `--profile backup`.
+  #
+  # Required: BACKUP_GPG_PASSPHRASE in .env (used for symmetric encryption).
+  # Optional: BACKUP_CRON (default "0 2 * * *"), BACKUP_RETENTION_DAYS (default 14).
+  backup:
+    profiles: ["backup"]
+    image: ${BACKUP_IMAGE:-excalidraw-backup:latest}
+    build:
+      context: ./ops/backup
+      dockerfile: Dockerfile
+    container_name: excalidraw-backup
+    environment:
+      # Database (read-only access is sufficient)
+      - EXCALIDRAW_DATABASE_HOST=${EXCALIDRAW_DATABASE_HOST}
+      - EXCALIDRAW_DATABASE_PORT=${EXCALIDRAW_DATABASE_PORT:-5432}
+      - EXCALIDRAW_DATABASE_USER=${EXCALIDRAW_DATABASE_USER}
+      - EXCALIDRAW_DATABASE_PASSWORD=${EXCALIDRAW_DATABASE_PASSWORD}
+      - EXCALIDRAW_DATABASE_DBNAME=${EXCALIDRAW_DATABASE_DBNAME:-excalidraw}
+      - EXCALIDRAW_DATABASE_SSLMODE=${EXCALIDRAW_DATABASE_SSLMODE:-require}
+      # Object storage (reuses the application credentials)
+      - EXCALIDRAW_STORAGE_ENDPOINT=${EXCALIDRAW_STORAGE_ENDPOINT}
+      - EXCALIDRAW_STORAGE_ACCESS_KEY=${EXCALIDRAW_STORAGE_ACCESS_KEY}
+      - EXCALIDRAW_STORAGE_SECRET_KEY=${EXCALIDRAW_STORAGE_SECRET_KEY}
+      - EXCALIDRAW_STORAGE_BUCKET=${EXCALIDRAW_STORAGE_BUCKET:-excalidraw-files}
+      - EXCALIDRAW_STORAGE_REGION=${EXCALIDRAW_STORAGE_REGION:-us-east-1}
+      - EXCALIDRAW_STORAGE_USE_SSL=${EXCALIDRAW_STORAGE_USE_SSL:-true}
+      # Backup configuration
+      - BACKUP_GPG_PASSPHRASE=${BACKUP_GPG_PASSPHRASE}
+      - BACKUP_CRON=${BACKUP_CRON:-0 2 * * *}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-14}
+      - BACKUP_S3_PREFIX=${BACKUP_S3_PREFIX:-backups/postgres}
+      - RUN_ON_START=${BACKUP_RUN_ON_START:-false}
+      - TZ=${TZ:-UTC}
+    restart: unless-stopped
+    networks:
+      - excalidraw-network
+
 networks:
   excalidraw-network:
     driver: bridge

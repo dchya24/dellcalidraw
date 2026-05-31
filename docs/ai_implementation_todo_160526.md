@@ -48,11 +48,11 @@
 | 2.10 | `update_element_style` | ✅ | |
 | 2.11 | `camera_update` | ✅ | Viewport control |
 | 2.12 | `get_canvas_state` | ✅ | Returns element count, types, bounds |
-| 2.13 | `create_group` | ❌ | Grouping elements together |
-| 2.14 | `duplicate_elements` | ❌ | Clone existing elements |
-| 2.15 | `resize_elements` | ❌ | Change width/height of existing elements |
+| 2.13 | `create_group` | ✅ | `provider.go` + `applyCreateGroup` — assigns shared groupId |
+| 2.14 | `duplicate_elements` | ✅ | `provider.go` + `applyDuplicateElements` — clones with deltaX/Y, rewires bound text |
+| 2.15 | `resize_elements` | ✅ | `provider.go` + `applyResizeElements` — width/height/scale, skips arrows |
 | 2.16 | `edit_text` | ✅ | `internal/ai/provider.go` — changes text content of existing text/labeled element (Sprint 2) |
-| 2.17 | `align_elements` | ❌ | Auto-align (left, center, right, top, bottom) |
+| 2.17 | `align_elements` | ✅ | `provider.go` + `applyAlignElements` — left/right/top/bottom/center-x/center-y, follows bound text |
 | 2.18 | `auto_layout` | ✅ | `internal/ai/provider.go` (tool def) + `AIChatPanel.tsx::applyAutoLayout` — vertical / horizontal / grid (Sprint 3) |
 
 ---
@@ -71,8 +71,8 @@
 | 3.8 | AI type definitions | ✅ | `types/ai.ts` | 140 lines |
 | 3.9 | Conversation history persistence | ✅ | `store/useAIChatStore.ts` | localStorage via Zustand persist (Sprint 2). Pruned: max 20 conversations, 100 messages each |
 | 3.10 | Multi-tab conversation support | ✅ | `useAIChatStore.ts` | Conversations keyed per tab, validated in Sprint 2 |
-| 3.11 | Chat panel resize / draggable | ❌ | — | Fixed panel size |
-| 3.12 | Markdown rendering in chat | ❌ | — | Plain text only |
+| 3.11 | Chat panel resize / draggable | ✅ | `AIChatPanel.tsx` | Bottom-left drag handle, size persisted in localStorage |
+| 3.12 | Markdown rendering in chat | ✅ | `AIChatPanel.tsx` | `react-markdown` + `remark-gfm` for assistant messages |
 
 ---
 
@@ -141,7 +141,7 @@
 | 8.1 | Conversation export (JSON/Markdown) | ❌ | |
 | 8.2 | Chat history to database persistence | ❌ | In-memory only |
 | 8.3 | Undo AI-generated elements (batch undo) | ✅ | `AIChatPanel.tsx` — "Undo" button on assistant message removes batch via tracked `createdElementIds` (Sprint 2) |
-| 8.4 | AI-generated element highlighting | ❌ | No visual distinction from user elements |
+| 8.4 | AI-generated element highlighting | ✅ | "Show" button on assistant message selects + scrolls to created elements |
 | 8.5 | Image generation & embed | ❌ | |
 | 8.6 | Multi-language prompt support | 🔧 | System prompt partially in English/Indonesian |
 | 8.7 | Rate limiting on AI endpoints | ✅ | `internal/middleware/ratelimit.go` — IP-based, 2 req/s, burst 6 (Sprint 1) |

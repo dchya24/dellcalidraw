@@ -132,6 +132,14 @@ convert_mermaid      // Args: syntax (string), x?, y? — parses Mermaid into Ex
 auto_layout          // Args: elementIds (array, [] = all), layout ("vertical" | "horizontal" | "grid"), spacing?, columns?, originX?, originY?
 ```
 
+### Grouping / Duplication / Sizing / Alignment
+```typescript
+create_group         // Args: elementIds (>=2) — assigns shared groupId
+duplicate_elements   // Args: elementIds, deltaX?, deltaY? — clone with offset; bound text labels follow
+resize_elements      // Args: elementIds, width? | height? | scale? — keeps top-left fixed; skips arrows
+align_elements       // Args: elementIds, alignment ("left"|"right"|"top"|"bottom"|"center-x"|"center-y")
+```
+
 ### Context
 ```typescript
 get_canvas_state   // Returns: elementCount, types, bounding box

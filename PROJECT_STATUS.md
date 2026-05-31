@@ -8,7 +8,7 @@
 
 ## 📊 Executive Summary
 
-**Overall Project Completion: ~90%**
+**Overall Project Completion: ~92%**
 
 Dellcalidraw is a real-time collaborative whiteboard application built with:
 - **Frontend:** React 18 + Vite 5 + TypeScript + Excalidraw 0.18
@@ -92,7 +92,7 @@ Dellcalidraw is a real-time collaborative whiteboard application built with:
 - ✅ IP rate limiter for AI endpoints (2 req/s, burst 6)
 - ✅ Model validation against provider catalog
 - ✅ Environment-aware behavior (`APP_ENV`)
-- ✅ 15 MCP tools: `create_rectangle`, `create_ellipse`, `create_diamond`, `create_text`, `create_arrow`, `create_line`, `create_zone`, `move_elements`, `delete_elements`, `update_element_style`, `edit_text`, `camera_update`, `get_canvas_state`, `convert_mermaid`, `auto_layout`
+- ✅ 19 MCP tools: `create_rectangle`, `create_ellipse`, `create_diamond`, `create_text`, `create_arrow`, `create_line`, `create_zone`, `move_elements`, `delete_elements`, `update_element_style`, `edit_text`, `camera_update`, `get_canvas_state`, `convert_mermaid`, `auto_layout`, `create_group`, `duplicate_elements`, `resize_elements`, `align_elements`
 - ✅ Token usage tracking via SSE `usage` event (OpenAI `stream_options.include_usage`, Anthropic `message_start`/`message_delta`)
 
 ### Frontend (React 18.3 + Vite 5.4)
@@ -137,6 +137,9 @@ Dellcalidraw is a real-time collaborative whiteboard application built with:
 - ✅ Stop generation button (AbortController)
 - ✅ Suggested prompts
 - ✅ Tool call badges with batch undo button
+- ✅ Show-on-canvas button (selects + scrolls to AI-generated elements)
+- ✅ Markdown rendering for assistant messages (react-markdown + remark-gfm)
+- ✅ Resizable panel (drag bottom-left handle, persisted to localStorage)
 - ✅ Model selector dropdown (consumes `/api/ai/models` + `/api/ai/health`)
 - ✅ Conversation persistence to localStorage (max 20 conversations × 100 messages)
 - ✅ Per-tab conversation isolation
@@ -371,18 +374,18 @@ See `DEPLOYMENT.md` for VPS deploy specifics.
 - ✅ Bcrypt password hashing, password reset flow
 - ✅ Rate limiting on WebSocket
 - ✅ Rate limiting on AI HTTP endpoints (2 req/s, burst 6)
+- ✅ Rate limiting on auth HTTP endpoints (1 req/s, burst 5)
 - ✅ Element validation/sanitization
 - ✅ CORS configuration
 - ✅ Parameterized SQL queries
 - ✅ Per-room AES-256-GCM WebSocket message encryption (Phase 11–12)
 - ✅ Encrypted Postgres backups to S3 (gpg AES256)
+- ✅ Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, COOP; HSTS opt-in for production)
 
 ### Missing
 - ❌ File encryption at rest
 - ❌ HTTPS/TLS terminated by app (relies on reverse proxy)
-- ❌ HTTP rate limiting on non-AI endpoints
-- ❌ CSRF protection
-- ❌ Security headers (CSP, HSTS, etc.)
+- ❌ CSRF protection (mitigated for now via CORS + bearer tokens)
 
 ---
 
@@ -393,13 +396,17 @@ See `DEPLOYMENT.md` for VPS deploy specifics.
 2. ✅ AI Sprint 3 (Mermaid, auto_layout, token tracking)
 3. ✅ WebSocket encryption (Phase 11–12)
 4. ✅ Backups (Postgres + S3)
+5. ✅ Security headers + auth rate limiting
+6. ✅ AI tools tambahan (group / duplicate / resize / align)
+7. ✅ Markdown chat + element highlighting + resizable panel
+8. ✅ OT design plan (`docs/plans/2026-05-31-operational-transformation.md`)
 
 **Following:**
-5. Verify Guest → Cloud sync end-to-end
-6. Production monitoring (Prometheus/Grafana/Sentry)
-7. Load testing
-8. File encryption at rest
-9. HTTPS hardening + security headers
+9. Verify Guest → Cloud sync end-to-end
+10. Production monitoring (Prometheus/Grafana/Sentry)
+11. Load testing
+12. File encryption at rest
+13. OT implementation (per the plan, after monitoring + replay harness)
 
 ---
 

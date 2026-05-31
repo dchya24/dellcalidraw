@@ -20,7 +20,8 @@ function getBaseUrl(): string {
 
 // ─── SSE event parser ────────────────────────────────────────────────────────
 
-function parseSSEEvent(data: unknown): SSEEvent | null {
+// Exported for unit tests; not part of the public surface.
+export function parseSSEEvent(data: unknown): SSEEvent | null {
   if (typeof data !== "object" || data === null) return null;
 
   const obj = data as Record<string, unknown>;

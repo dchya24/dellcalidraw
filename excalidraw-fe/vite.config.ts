@@ -27,5 +27,16 @@ export default defineConfig(({ mode }) => {
       // Extend timeout for large builds
       sourcemap: false,
     },
+    // Vitest config piggybacks on vite.config so plugins are reused.
+    test: {
+      globals: true,
+      environment: 'jsdom',
+      setupFiles: ['./src/test/setup.ts'],
+      // Skip mermaid/excalidraw heavy bundles — they're integration
+      // territory and need real DOM/canvas. Unit tests focus on the
+      // service layer, hooks, and small components.
+      exclude: ['node_modules', 'dist', '.git', '.idea', 'e2e/**'],
+      css: false,
+    },
   }
 })

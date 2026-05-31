@@ -8,7 +8,7 @@
 
 ## 📊 Executive Summary
 
-**Overall Project Completion: ~92%**
+**Overall Project Completion: ~93%**
 
 Dellcalidraw is a real-time collaborative whiteboard application built with:
 - **Frontend:** React 18 + Vite 5 + TypeScript + Excalidraw 0.18
@@ -361,9 +361,20 @@ See `DEPLOYMENT.md` for VPS deploy specifics.
 
 ### Automated
 - ✅ CI lint + typecheck + build (frontend)
-- 🟡 Backend: minimal unit tests
-- ❌ Frontend unit tests (Vitest not yet set up)
-- ❌ Integration / E2E / load tests
+- ✅ CI go fmt + go test -race + coverage (backend)
+- ✅ Frontend Vitest unit tests: cryptoService, aiService SSE parser
+- ✅ Backend `go test` unit tests:
+  - `internal/crypto` (AES-GCM round-trip, tamper, wire format)
+  - `internal/auth` (bcrypt, JWT lifecycle, refresh randomness, tamper detection)
+  - `internal/config` (defaults, env overrides, CORS parsing)
+  - `internal/middleware` (security headers, rate limiter behavior)
+  - `internal/ai` (system prompt, 19-tool registry integrity, schema sanity)
+- ❌ HTTP integration tests (handlers coupled to `*PostgresClient`, deferred)
+- ❌ WebSocket / collab tests (deferred per focus)
+- ❌ E2E browser tests (Playwright/Cypress) — deferred
+- ❌ Load tests (deferred per focus)
+
+See `docs/TESTING.md` for the running guide and what's still uncovered.
 
 ---
 
@@ -400,13 +411,14 @@ See `DEPLOYMENT.md` for VPS deploy specifics.
 6. ✅ AI tools tambahan (group / duplicate / resize / align)
 7. ✅ Markdown chat + element highlighting + resizable panel
 8. ✅ OT design plan (`docs/plans/2026-05-31-operational-transformation.md`)
+9. ✅ Test scaffolding (Vitest FE) + pure-logic tests both stacks
+10. ✅ Bug fix: refresh tokens now opaque random 256-bit (was deterministic JWT)
 
 **Following:**
-9. Verify Guest → Cloud sync end-to-end
-10. Production monitoring (Prometheus/Grafana/Sentry)
-11. Load testing
-12. File encryption at rest
-13. OT implementation (per the plan, after monitoring + replay harness)
+11. HTTP integration tests (would unblock guest→cloud sync verification)
+12. Production monitoring (Prometheus/Grafana/Sentry)
+13. File encryption at rest
+14. OT implementation (per the plan, after monitoring + replay harness)
 
 ---
 

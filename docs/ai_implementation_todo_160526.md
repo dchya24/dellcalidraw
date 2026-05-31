@@ -1,7 +1,7 @@
 # AI Implementation TODO
 
 **Created:** 2026-05-16
-**Last Updated:** 2026-05-16
+**Last Updated:** 2026-05-31
 **Source:** Analysis of `AI_CHAT_DIAGRAM.md`, `excalidraw-mcp.md`, `excalidraw_readme.md`
 
 ---
@@ -51,9 +51,9 @@
 | 2.13 | `create_group` | ❌ | Grouping elements together |
 | 2.14 | `duplicate_elements` | ❌ | Clone existing elements |
 | 2.15 | `resize_elements` | ❌ | Change width/height of existing elements |
-| 2.16 | `edit_text` | ❌ | Change text content of existing text/label |
+| 2.16 | `edit_text` | ✅ | `internal/ai/provider.go` — changes text content of existing text/labeled element (Sprint 2) |
 | 2.17 | `align_elements` | ❌ | Auto-align (left, center, right, top, bottom) |
-| 2.18 | `auto_layout` | ❌ | Auto-arrange flowchart/grid layout |
+| 2.18 | `auto_layout` | ✅ | `internal/ai/provider.go` (tool def) + `AIChatPanel.tsx::applyAutoLayout` — vertical / horizontal / grid (Sprint 3) |
 
 ---
 
@@ -69,8 +69,8 @@
 | 3.6 | Suggested prompts | ✅ | `AIChatPanel.tsx` | Pre-built prompt suggestions |
 | 3.7 | Tool call badges & summary | ✅ | `AIChatPanel.tsx` | Visual feedback for executed tools |
 | 3.8 | AI type definitions | ✅ | `types/ai.ts` | 140 lines |
-| 3.9 | Conversation history persistence | ❌ | — | Lost on page refresh |
-| 3.10 | Multi-tab conversation support | 🔧 | `useAIChatStore.ts` | Structure exists, needs testing |
+| 3.9 | Conversation history persistence | ✅ | `store/useAIChatStore.ts` | localStorage via Zustand persist (Sprint 2). Pruned: max 20 conversations, 100 messages each |
+| 3.10 | Multi-tab conversation support | ✅ | `useAIChatStore.ts` | Conversations keyed per tab, validated in Sprint 2 |
 | 3.11 | Chat panel resize / draggable | ❌ | — | Fixed panel size |
 | 3.12 | Markdown rendering in chat | ❌ | — | Plain text only |
 
@@ -80,12 +80,12 @@
 
 | # | Feature | Status | File(s) | Notes |
 |---|---------|--------|---------|-------|
-| 4.1 | Model selector UI | ❌ | — | No UI to switch models at runtime |
-| 4.2 | Provider selector UI | ❌ | — | No UI to switch provider |
+| 4.1 | Model selector UI | ✅ | `components/ai/AIChatPanel.tsx` | Dropdown consumes `/api/ai/models` + `/api/ai/health` (Sprint 1) |
+| 4.2 | Provider selector UI | ❌ | — | Provider tied to backend env; no runtime switch |
 | 4.3 | Temperature slider UI | ❌ | — | Config via env only |
-| 4.4 | API key input UI | ❌ | — | Config via env only |
+| 4.4 | API key input UI | ❌ | — | Config via env only (server-managed, intentional) |
 | 4.5 | Custom base URL UI | ❌ | — | Config via env only |
-| 4.6 | Model list endpoint | ✅ | `GET /api/ai/models` | Backend ready, no FE consumer |
+| 4.6 | Model list endpoint | ✅ | `GET /api/ai/models` | Consumed by FE model selector |
 
 ---
 
@@ -93,10 +93,10 @@
 
 | # | Feature | Status | File(s) | Notes |
 |---|---------|--------|---------|-------|
-| 5.1 | Type definitions | 📝 | `types/ai.ts` | `MermaidToExcalidrawParams` interface only |
-| 5.2 | `@excalidraw/mermaid-to-excalidraw` integration | ❌ | — | Package not installed/used |
-| 5.3 | Mermaid parsing tool (backend) | ❌ | — | No `convert_mermaid` MCP tool |
-| 5.4 | Mermaid import UI | ❌ | — | No import button/dialog |
+| 5.1 | Type definitions | ✅ | `types/ai.ts` | `MermaidToExcalidrawParams` interface |
+| 5.2 | `@excalidraw/mermaid-to-excalidraw` integration | ✅ | `package.json`, `AIChatPanel.tsx::applyConvertMermaid` | Lazy-loaded dynamic import (Sprint 3) |
+| 5.3 | Mermaid parsing tool (backend) | ✅ | `internal/ai/provider.go` — `convert_mermaid` tool definition (Sprint 3) |
+| 5.4 | Mermaid import UI | 🔧 | — | AI invokes the tool via prompt; no dedicated paste-Mermaid dialog yet |
 
 ---
 
@@ -140,12 +140,12 @@
 |---|---------|--------|-------|
 | 8.1 | Conversation export (JSON/Markdown) | ❌ | |
 | 8.2 | Chat history to database persistence | ❌ | In-memory only |
-| 8.3 | Undo AI-generated elements (batch undo) | ❌ | No undo grouping |
+| 8.3 | Undo AI-generated elements (batch undo) | ✅ | `AIChatPanel.tsx` — "Undo" button on assistant message removes batch via tracked `createdElementIds` (Sprint 2) |
 | 8.4 | AI-generated element highlighting | ❌ | No visual distinction from user elements |
 | 8.5 | Image generation & embed | ❌ | |
 | 8.6 | Multi-language prompt support | 🔧 | System prompt partially in English/Indonesian |
-| 8.7 | Rate limiting on AI endpoints | ❌ | No rate limiter |
-| 8.8 | Token usage tracking & display | ❌ | No token counter |
+| 8.7 | Rate limiting on AI endpoints | ✅ | `internal/middleware/ratelimit.go` — IP-based, 2 req/s, burst 6 (Sprint 1) |
+| 8.8 | Token usage tracking & display | ✅ | OpenAI: `stream_options.include_usage`. Anthropic: `message_start`/`message_delta`. Backend emits `usage` SSE event, FE displays per-message badge + session total in panel header (Sprint 3) |
 | 8.9 | Error recovery (retry failed generations) | ❌ | |
 | 8.10 | Context window management | ❌ | No summarization of long conversations |
 
@@ -155,7 +155,7 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 9.1 | Update `AI_CHAT_DIAGRAM.md` tools list | ❌ | Missing `create_zone` and `camera_update` |
+| 9.1 | Update `AI_CHAT_DIAGRAM.md` tools list | ✅ | Synced 2026-05-31: now lists all 13 tools incl. `edit_text`, `create_zone`, `camera_update` |
 | 9.2 | Add MCP App integration guide | ❌ | `excalidraw-mcp.md` is external README only |
 | 9.3 | Document `excalidraw_readme.md` adaptation status | ❌ | No mapping of spec → implementation |
 | 9.4 | Add AI troubleshooting guide | ❌ | Common errors, debug tips |
@@ -166,22 +166,18 @@
 ## Priority Recommendations
 
 ### 🔴 High Priority (Core Experience)
-1. **#9.1** — Update docs to match actual implementation (12 tools, not 10)
-2. **#5.2-5.4** — Mermaid integration (types exist, implementation gap)
-3. **#3.9** — Conversation persistence (users lose history on refresh)
-4. **#8.3** — Batch undo for AI elements
+1. **#2.13-2.17** — Additional MCP tools (group, duplicate, resize, align)
+2. **#3.12** — Markdown rendering in chat panel
 
 ### 🟡 Medium Priority (Usability)
-5. **#4.1-4.2** — Model & provider selector UI
-6. **#2.13-2.18** — Additional MCP tools (group, duplicate, resize, align, auto-layout)
-7. **#8.7** — Rate limiting on AI endpoints
-8. **#7.8-7.10** — Checkpoint, animation, dark mode support
+3. **#7.8-7.10** — Checkpoint, animation, dark mode support
 
 ### 🟢 Low Priority (Nice to Have)
-9. **#6.1-6.4** — Full MCP App server mode
-10. **#1.7-1.8** — Additional providers (Gemini, rotation)
-11. **#8.5** — Image generation
-12. **#3.11-3.12** — Panel resize, markdown rendering
+4. **#6.1-6.4** — Full MCP App server mode
+5. **#1.7-1.8** — Additional providers (Gemini, rotation)
+6. **#8.5** — Image generation
+7. **#3.11** — Panel resize / draggable
+8. **#4.2-4.5** — In-app provider/temperature/base URL UI (server-managed today)
 
 ---
 
@@ -223,7 +219,7 @@
 
 ---
 
-### Sprint 3 — Game Changers (est. ~3-4 hari)
+### Sprint 3 — Game Changers (est. ~3-4 hari) — **DONE 2026-05-31**
 
 | # | Item | Effort | Impact | Alasan |
 |---|------|--------|--------|--------|
@@ -232,9 +228,9 @@
 | 8.8 | Token usage tracking & display | 0.5 hari | Medium | Counter di SSE response + UI display. Penting untuk user dengan API berbayar |
 
 **Deliverables:**
-- [ ] `@excalidraw/mermaid-to-excalidraw` installed, `convert_mermaid` MCP tool di backend
-- [ ] Tool `auto_layout` di `provider.go` dengan simple layout algorithm
-- [ ] Token counter di SSE stream + tampilan di chat panel UI
+- [x] `@excalidraw/mermaid-to-excalidraw@2.2.2` installed (lazy-loaded), `convert_mermaid` MCP tool di backend, `applyConvertMermaid` di FE
+- [x] Tool `auto_layout` di `provider.go` (vertical / horizontal / grid) + `applyAutoLayout` di FE yang memindahkan elemen sambil menjaga binding
+- [x] Token counter di SSE stream (`usage` event) untuk OpenAI (`stream_options.include_usage`) dan Anthropic (`message_start` + `message_delta`). FE menampilkan badge per-pesan dan total per session di header.
 
 ---
 

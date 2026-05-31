@@ -120,9 +120,16 @@ camera_update      // Args: x, y, width, height — controls the viewport camera
 
 ### Element Modification
 ```typescript
-move_elements      // Args: elementIds, deltaX, deltaY
-delete_elements    // Args: elementIds
+move_elements        // Args: elementIds, deltaX, deltaY
+delete_elements      // Args: elementIds
 update_element_style // Args: elementIds, backgroundColor?, strokeColor?, strokeWidth?, opacity?
+edit_text            // Args: elementId, text — change text content of an existing text/labeled element
+```
+
+### Mermaid & Auto Layout
+```typescript
+convert_mermaid      // Args: syntax (string), x?, y? — parses Mermaid into Excalidraw elements (frontend-rendered)
+auto_layout          // Args: elementIds (array, [] = all), layout ("vertical" | "horizontal" | "grid"), spacing?, columns?, originX?, originY?
 ```
 
 ### Context

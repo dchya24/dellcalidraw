@@ -20,6 +20,7 @@ type Config struct {
 	AI        AIConfig        `mapstructure:"ai"`
 	Log       LogConfig       `mapstructure:"log"`
 	CORS      CORSConfig      `mapstructure:"cors"`
+	Security  SecurityConfig  `mapstructure:"security"`
 }
 
 // IsDevelopment returns true if running in development mode
@@ -96,6 +97,16 @@ type CORSConfig struct {
 	AllowedHeaders   []string `mapstructure:"allowed_headers"`
 	AllowCredentials bool     `mapstructure:"allow_credentials"`
 	MaxAge           int      `mapstructure:"max_age"`
+}
+
+// SecurityConfig controls security HTTP response headers. HSTS in
+// particular must only be enabled once TLS is guaranteed in front of
+// the server, otherwise it pins the host to a broken state in browsers.
+type SecurityConfig struct {
+	EnableHSTS  bool   `mapstructure:"enable_hsts"`
+	HSTSMaxAge  int    `mapstructure:"hsts_max_age"`
+	HSTSPreload bool   `mapstructure:"hsts_preload"`
+	CSP         string `mapstructure:"csp"`
 }
 
 func Load(configPath string) (*Config, error) {
@@ -202,6 +213,12 @@ func bindEnvVars() {
 	_ = viper.BindEnv("cors.allowed_headers", "EXCALIDRAW_CORS_ALLOWED_HEADERS")
 	_ = viper.BindEnv("cors.allow_credentials", "EXCALIDRAW_CORS_ALLOW_CREDENTIALS")
 	_ = viper.BindEnv("cors.max_age", "EXCALIDRAW_CORS_MAX_AGE")
+
+	// Security headers
+	_ = viper.BindEnv("security.enable_hsts", "EXCALIDRAW_SECURITY_ENABLE_HSTS")
+	_ = viper.BindEnv("security.hsts_max_age", "EXCALIDRAW_SECURITY_HSTS_MAX_AGE")
+	_ = viper.BindEnv("security.hsts_preload", "EXCALIDRAW_SECURITY_HSTS_PRELOAD")
+	_ = viper.BindEnv("security.csp", "EXCALIDRAW_SECURITY_CSP")
 }
 
 func setDefaults() {

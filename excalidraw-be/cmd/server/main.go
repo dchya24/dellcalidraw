@@ -159,6 +159,20 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middlewareLogger)
 
+	// Security headers — always on. HSTS only emitted when the deploy
+	// is behind TLS (gated by config flag) so dev environments aren't
+	// pinned by a stale HSTS header.
+	secCfg := appmiddleware.DefaultSecurityHeaders()
+	secCfg.EnableHSTS = cfg.Security.EnableHSTS
+	secCfg.SetHSTSPreload = cfg.Security.HSTSPreload
+	if cfg.Security.HSTSMaxAge > 0 {
+		secCfg.HSTSMaxAge = cfg.Security.HSTSMaxAge
+	}
+	if cfg.Security.CSP != "" {
+		secCfg.CSP = cfg.Security.CSP
+	}
+	r.Use(appmiddleware.SecurityHeaders(secCfg))
+
 	// CORS middleware - must be before route handlers
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORS.AllowedOrigins,
@@ -184,15 +198,24 @@ func main() {
 	// Auth routes (public)
 	if dbClient != nil {
 		authHandler := NewAuthHandler(authService, dbClient)
-		r.Post("/api/auth/register", authHandler.Register)
-		r.Post("/api/auth/login", authHandler.Login)
-		r.Post("/api/auth/refresh", authHandler.Refresh)
-		r.Post("/api/auth/logout", authHandler.Logout)
 
-		// Password reset routes (public)
-		r.Post("/api/auth/forgot-password", authHandler.ForgotPassword)
-		r.Post("/api/auth/validate-reset-token", authHandler.ValidateResetToken)
-		r.Post("/api/auth/reset-password", authHandler.ResetPassword)
+		// Auth-endpoint rate limiter: stricter than AI — prevents
+		// credential stuffing / signup spam. 1 req/s burst 5 per IP.
+		authRateLimiter := appmiddleware.NewIPRateLimiter(1, 5)
+
+		r.Group(func(r chi.Router) {
+			r.Use(authRateLimiter.Middleware)
+			r.Post("/api/auth/register", authHandler.Register)
+			r.Post("/api/auth/login", authHandler.Login)
+			r.Post("/api/auth/refresh", authHandler.Refresh)
+			r.Post("/api/auth/logout", authHandler.Logout)
+
+			// Password reset routes (public). Same bucket — reset is
+			// the most spammable surface, deserves the limiter.
+			r.Post("/api/auth/forgot-password", authHandler.ForgotPassword)
+			r.Post("/api/auth/validate-reset-token", authHandler.ValidateResetToken)
+			r.Post("/api/auth/reset-password", authHandler.ResetPassword)
+		})
 
 		// File management routes (authenticated)
 		r.Group(func(r chi.Router) {

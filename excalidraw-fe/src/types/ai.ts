@@ -13,6 +13,14 @@ export interface ChatMessage {
   toolResults?: ToolResult[];
   /** Element IDs created by AI tool calls in this message */
   createdElementIds?: string[];
+  /** Token usage reported by the LLM for this exchange */
+  usage?: TokenUsage;
+}
+
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
 }
 
 export interface ToolCall {
@@ -52,7 +60,7 @@ export interface AIConfig {
 
 // ─── SSE Events ────────────────────────────────────────────────────────────────
 
-export type SSEEventType = "text" | "tool_call" | "tool_result" | "done" | "error";
+export type SSEEventType = "text" | "tool_call" | "tool_result" | "usage" | "done" | "error";
 
 export interface SSETextEvent {
   type: "text";
@@ -81,6 +89,11 @@ export interface SSEDoneEvent {
   elementCount: number;
 }
 
+export interface SSEUsageEvent {
+  type: "usage";
+  usage: TokenUsage;
+}
+
 export interface SSEErrorEvent {
   type: "error";
   message: string;
@@ -90,6 +103,7 @@ export type SSEEvent =
   | SSETextEvent
   | SSEToolCallEvent
   | SSEToolResultEvent
+  | SSEUsageEvent
   | SSEDoneEvent
   | SSEErrorEvent;
 
@@ -141,6 +155,17 @@ export interface EditTextParams {
 
 export interface MermaidToExcalidrawParams {
   syntax: string;
+  x?: number;
+  y?: number;
+}
+
+export interface AutoLayoutParams {
+  elementIds?: string[];
+  layout: "vertical" | "horizontal" | "grid";
+  spacing?: number;
+  columns?: number;
+  originX?: number;
+  originY?: number;
 }
 
 export interface GetCanvasStateResult {

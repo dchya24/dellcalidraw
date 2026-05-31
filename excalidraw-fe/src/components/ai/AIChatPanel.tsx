@@ -15,7 +15,7 @@ import { useWhiteboardStore } from "../../store/useWhiteboardStore";
 import { sendChatMessage, listModels, getActiveModel } from "../../services/ai/aiService";
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { ChatMessage, ToolCall } from "../../types/ai";
+import type { ChatMessage, ToolCall, TokenUsage } from "../../types/ai";
 
 // Type alias - convertToExcalidrawElements accepts this skeleton format
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,6 +50,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const trackedToolCalls = useRef<ToolCall[]>([]);
   const trackedElementIds = useRef<string[]>([]);
+  const trackedUsage = useRef<TokenUsage | null>(null);
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -238,6 +239,27 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
               applyEditText(excalidrawAPI, args);
               break;
             }
+            if (toolName === "auto_layout") {
+              const newIds = applyAutoLayout(excalidrawAPI, args);
+              for (const id of newIds) {
+                trackedElementIds.current.push(id);
+              }
+              break;
+            }
+            if (toolName === "convert_mermaid") {
+              // Async — don't await; let stream continue. New IDs are tracked
+              // when the parser resolves.
+              applyConvertMermaid(excalidrawAPI, args)
+                .then((newIds) => {
+                  for (const id of newIds) {
+                    trackedElementIds.current.push(id);
+                  }
+                })
+                .catch((err) => {
+                  console.error("[AIChatPanel] convert_mermaid failed:", err);
+                });
+              break;
+            }
 
             // Handle create tools — add to canvas immediately
             const { skeleton, bindings } = generateSkeletonFromTool(toolName, args, excalidrawAPI);
@@ -281,6 +303,11 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
           case "tool_result":
             break;
 
+          case "usage": {
+            trackedUsage.current = event.usage;
+            break;
+          }
+
           case "done": {
             // Finalize: add tool calls to message + generate summary if no text
             const { conversations: doneConvs } = useAIChatStore.getState();
@@ -292,6 +319,9 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
                 toolCalls: [...trackedToolCalls.current],
                 createdElementIds: [...trackedElementIds.current],
               };
+              if (trackedUsage.current) {
+                updates.usage = trackedUsage.current;
+              }
               const isProgressMsg = doneLast.content?.startsWith("Membuat diagram");
               if (!doneLast.content || isProgressMsg) {
                 updates.content = generateToolSummaryText(trackedToolCalls.current);
@@ -301,6 +331,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
 
             trackedToolCalls.current = [];
             trackedElementIds.current = [];
+            trackedUsage.current = null;
             if (excalidrawAPI) {
               excalidrawAPI.history.clear();
             }
@@ -317,6 +348,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
       onError: (error) => {
         trackedToolCalls.current = [];
         trackedElementIds.current = [];
+        trackedUsage.current = null;
         console.log('error sendChatMessage', error)
         setHasError(true);
         setErrorMessage(error.message);
@@ -325,6 +357,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
       onComplete: () => {
         trackedToolCalls.current = [];
         trackedElementIds.current = [];
+        trackedUsage.current = null;
         setStreaming(false);
       },
       signal: abortControllerRef.current.signal,
@@ -427,6 +460,18 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
             <Sparkles size={16} className="text-white" />
           </div>
           <span className="font-semibold text-sm">AI Assistant</span>
+          {(() => {
+            const total = sumSessionUsage(messages);
+            if (total.totalTokens <= 0) return null;
+            return (
+              <span
+                className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-100 text-[10px] text-gray-500 font-mono"
+                title={`Session tokens: ${total.promptTokens} prompt + ${total.completionTokens} completion = ${total.totalTokens} total`}
+              >
+                {formatNumber(total.totalTokens)} tok
+              </span>
+            );
+          })()}
         </div>
         <div className="flex items-center gap-1">
           {/* Model selector */}
@@ -549,6 +594,11 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
                         )}
                       </div>
                     )}
+                    {msg.role === "assistant" && msg.usage && msg.usage.totalTokens > 0 && (
+                      <div className="mt-1.5 text-[10px] text-gray-400 font-mono">
+                        {formatTokenUsage(msg.usage)}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -654,6 +704,8 @@ const TOOL_META: Record<string, { icon: string; label: string }> = {
   update_element_style: { icon: "🎨", label: "Styled" },
   edit_text: { icon: "✏️", label: "Edited" },
   camera_update: { icon: "📷", label: "Camera" },
+  convert_mermaid: { icon: "🧬", label: "Mermaid" },
+  auto_layout: { icon: "📏", label: "Auto-layout" },
 };
 
 function getToolCallSummary(toolCalls: ToolCall[]): { icon: string; label: string }[] {
@@ -683,6 +735,33 @@ function generateToolSummaryText(toolCalls: ToolCall[]): string {
   const total = toolCalls.filter(tc => tc.name !== "camera_update").length;
   const parts = summary.map(s => s.label);
   return `Diagram berhasil dibuat dengan ${total} elemen: ${parts.join(", ")}`;
+}
+
+// ─── Token Usage Helpers ───────────────────────────────────────────────────────────────
+function formatTokenUsage(usage: TokenUsage): string {
+  const total = usage.totalTokens || usage.promptTokens + usage.completionTokens;
+  if (total <= 0) return "";
+  return `${formatNumber(usage.promptTokens)} in · ${formatNumber(usage.completionTokens)} out · ${formatNumber(total)} total`;
+}
+
+function sumSessionUsage(messages: ChatMessage[]): TokenUsage {
+  return messages.reduce<TokenUsage>(
+    (acc, m) => {
+      if (m.usage) {
+        acc.promptTokens += m.usage.promptTokens;
+        acc.completionTokens += m.usage.completionTokens;
+        acc.totalTokens += m.usage.totalTokens;
+      }
+      return acc;
+    },
+    { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+  );
+}
+
+function formatNumber(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
 // ─── Skeleton Generator from Tool Calls ──────────────────────────────────────
@@ -1095,4 +1174,177 @@ function applyEditText(
   }
 
   api.updateScene({ elements: updated });
+}
+
+// ─── Auto Layout Helper ──────────────────────────────────────────────────────
+// Repositions selected elements into a clean vertical, horizontal, or grid
+// layout. Sizes are preserved; only x/y are updated. When no elementIds are
+// provided, all non-deleted top-level elements (not arrows or text labels
+// bound to other shapes) are arranged.
+
+function applyAutoLayout(
+  api: ExcalidrawImperativeAPI,
+  args: Record<string, unknown>,
+): string[] {
+  const layout = String(args.layout || "vertical") as "vertical" | "horizontal" | "grid";
+  const spacing = Number(args.spacing ?? 40);
+  const columns = Math.max(1, Number(args.columns ?? 3));
+  const requestedIds = (args.elementIds as string[]) || [];
+
+  const elements = api.getSceneElements();
+  if (elements.length === 0) return [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const isArrangeable = (el: any): boolean => {
+    if (el.isDeleted) return false;
+    // skip text bound to a container — it auto-positions
+    if (el.type === "text" && el.containerId) return false;
+    // skip arrows — they're routed by their bindings
+    if (el.type === "arrow") return false;
+    return true;
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const candidates = (elements as any[]).filter((el) =>
+    requestedIds.length > 0 ? requestedIds.includes(el.id) && isArrangeable(el) : isArrangeable(el),
+  );
+
+  if (candidates.length === 0) return [];
+
+  // Anchor: top-left of the current bounding box of candidates,
+  // unless explicit originX/originY provided.
+  const minX = Math.min(...candidates.map((e) => e.x));
+  const minY = Math.min(...candidates.map((e) => e.y));
+  const originX = args.originX !== undefined ? Number(args.originX) : minX;
+  const originY = args.originY !== undefined ? Number(args.originY) : minY;
+
+  const positions = new Map<string, { x: number; y: number }>();
+
+  if (layout === "vertical") {
+    let y = originY;
+    for (const el of candidates) {
+      positions.set(el.id, { x: originX, y });
+      y += el.height + spacing;
+    }
+  } else if (layout === "horizontal") {
+    let x = originX;
+    for (const el of candidates) {
+      positions.set(el.id, { x, y: originY });
+      x += el.width + spacing;
+    }
+  } else {
+    // grid: rows of `columns`. Row height = max element height in that row.
+    const rowMaxHeights: number[] = [];
+    for (let i = 0; i < candidates.length; i += columns) {
+      const row = candidates.slice(i, i + columns);
+      rowMaxHeights.push(Math.max(...row.map((e) => e.height)));
+    }
+    // Column widths = max width across all rows in that column slot.
+    const colMaxWidths = new Array(columns).fill(0);
+    candidates.forEach((el, idx) => {
+      const c = idx % columns;
+      if (el.width > colMaxWidths[c]) colMaxWidths[c] = el.width;
+    });
+
+    candidates.forEach((el, idx) => {
+      const r = Math.floor(idx / columns);
+      const c = idx % columns;
+      const x =
+        originX + colMaxWidths.slice(0, c).reduce((sum, w) => sum + w + spacing, 0);
+      const y =
+        originY + rowMaxHeights.slice(0, r).reduce((sum, h) => sum + h + spacing, 0);
+      positions.set(el.id, { x, y });
+    });
+  }
+
+  // Apply: shift each candidate to its new position, and shift its bound
+  // text labels by the same delta so labels stay centered.
+  const deltas = new Map<string, { dx: number; dy: number }>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updated = (elements as any[]).map((el) => {
+    const pos = positions.get(el.id);
+    if (pos) {
+      deltas.set(el.id, { dx: pos.x - el.x, dy: pos.y - el.y });
+      return { ...el, x: pos.x, y: pos.y };
+    }
+    return el;
+  });
+
+  // Shift bound text labels along with their container
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const finalElements = updated.map((el: any) => {
+    if (el.type === "text" && el.containerId && deltas.has(el.containerId)) {
+      const d = deltas.get(el.containerId)!;
+      return { ...el, x: el.x + d.dx, y: el.y + d.dy };
+    }
+    return el;
+  });
+
+  api.updateScene({ elements: finalElements });
+
+  // auto_layout doesn't create new elements; return [] so undo tracking is unaffected.
+  return [];
+}
+
+// ─── Mermaid Converter Helper ────────────────────────────────────────────────
+// Parses Mermaid syntax into Excalidraw skeletons via
+// @excalidraw/mermaid-to-excalidraw, converts them, and adds them to the
+// scene at the optional anchor (x, y).
+
+async function applyConvertMermaid(
+  api: ExcalidrawImperativeAPI,
+  args: Record<string, unknown>,
+): Promise<string[]> {
+  const syntaxRaw = String(args.syntax || "").trim();
+  if (!syntaxRaw) return [];
+
+  // Strip accidental ```mermaid fences
+  const syntax = syntaxRaw
+    .replace(/^```\s*mermaid\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+
+  const anchorX = args.x !== undefined ? Number(args.x) : 100;
+  const anchorY = args.y !== undefined ? Number(args.y) : 100;
+
+  try {
+    // Lazy import to keep the main bundle smaller and load mermaid only when used
+    const { parseMermaidToExcalidraw } = await import(
+      "@excalidraw/mermaid-to-excalidraw"
+    );
+
+    const result = await parseMermaidToExcalidraw(syntax, {
+      themeVariables: { fontSize: "16px" },
+    });
+
+    if (!result.elements || result.elements.length === 0) {
+      console.warn("[AIChatPanel] Mermaid produced no elements");
+      return [];
+    }
+
+    // Parser returns elements anchored at (0, 0). Shift to anchor.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const shifted = (result.elements as any[]).map((el) => ({
+      ...el,
+      x: (el.x ?? 0) + anchorX,
+      y: (el.y ?? 0) + anchorY,
+    }));
+
+    const converted = convertToExcalidrawElements(
+      shifted as ExcalidrawElementSkeleton[],
+      { regenerateIds: true },
+    );
+
+    if (converted.length === 0) return [];
+
+    const currentElements = api.getSceneElements();
+    api.updateScene({
+      elements: [...currentElements, ...converted],
+    });
+
+    return converted.map((e) => e.id);
+  } catch (err) {
+    console.error("[AIChatPanel] Mermaid parse error:", err);
+    return [];
+  }
 }

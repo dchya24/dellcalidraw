@@ -43,13 +43,18 @@ func NewOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature
 
 // OpenAI request/response types
 type openAIRequest struct {
-	Model       string          `json:"model"`
-	Messages    []openAIMessage `json:"messages"`
-	Tools       []openAITool    `json:"tools,omitempty"`
-	ToolChoice  any             `json:"tool_choice,omitempty"`
-	MaxTokens   int             `json:"max_tokens,omitempty"`
-	Temperature float64         `json:"temperature,omitempty"`
-	Stream      bool            `json:"stream,omitempty"`
+	Model         string              `json:"model"`
+	Messages      []openAIMessage     `json:"messages"`
+	Tools         []openAITool        `json:"tools,omitempty"`
+	ToolChoice    any                 `json:"tool_choice,omitempty"`
+	MaxTokens     int                 `json:"max_tokens,omitempty"`
+	Temperature   float64             `json:"temperature,omitempty"`
+	Stream        bool                `json:"stream,omitempty"`
+	StreamOptions *openAIStreamOptions `json:"stream_options,omitempty"`
+}
+
+type openAIStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type openAIMessage struct {
@@ -198,11 +203,12 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 	}
 
 	req := openAIRequest{
-		Model:       model,
-		Messages:    convertMessages(messages),
-		MaxTokens:   p.MaxTokens,
-		Temperature: p.Temperature,
-		Stream:      true,
+		Model:         model,
+		Messages:      convertMessages(messages),
+		MaxTokens:     p.MaxTokens,
+		Temperature:   p.Temperature,
+		Stream:        true,
+		StreamOptions: &openAIStreamOptions{IncludeUsage: true},
 	}
 
 	if len(tools) > 0 {
@@ -348,10 +354,29 @@ func (p *OpenAIProvider) processStreamChunk(data string, pendingCalls map[int]*p
 			} `json:"delta"`
 			FinishReason *string `json:"finish_reason"`
 		} `json:"choices"`
+		Usage *struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage,omitempty"`
 	}
 
 	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 		return nil // skip malformed
+	}
+
+	// OpenAI emits a final chunk with empty choices and a populated usage.
+	if chunk.Usage != nil {
+		if err := streamFunc(SSEEvent{
+			Type: "usage",
+			Usage: &Usage{
+				PromptTokens:     chunk.Usage.PromptTokens,
+				CompletionTokens: chunk.Usage.CompletionTokens,
+				TotalTokens:      chunk.Usage.TotalTokens,
+			},
+		}); err != nil {
+			return err
+		}
 	}
 
 	if len(chunk.Choices) == 0 {

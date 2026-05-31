@@ -21,13 +21,24 @@ type ToolResult struct {
 
 // SSEEvent represents Server-Sent Events for streaming
 type SSEEvent struct {
-	Type    string      `json:"type"` // text, tool_call, tool_result, done, error
+	Type    string      `json:"type"` // text, tool_call, tool_result, usage, done, error
 	Content string      `json:"content,omitempty"`
 	ID      string      `json:"id,omitempty"`
 	Name    string      `json:"name,omitempty"`
 	CallID  string      `json:"callId,omitempty"`
 	Result  interface{} `json:"result,omitempty"`
 	Error   string      `json:"error,omitempty"`
+	Usage   *Usage      `json:"usage,omitempty"`
+}
+
+// Usage carries token accounting for a single LLM exchange.
+// PromptTokens + CompletionTokens may not equal TotalTokens for some
+// providers that include cache or reasoning tokens; expose all three
+// and let the client decide what to display.
+type Usage struct {
+	PromptTokens     int `json:"promptTokens"`
+	CompletionTokens int `json:"completionTokens"`
+	TotalTokens      int `json:"totalTokens"`
 }
 
 // ChatRequest represents incoming chat request
@@ -197,6 +208,10 @@ Control viewport with camera_update:
 **Camera & Canvas:**
 - camera_update: x, y, width, height
 - get_canvas_state: Returns element count, types, bounding box
+
+**Mermaid & Auto Layout:**
+- convert_mermaid: syntax (string), x?, y? — prefer this for full diagrams from a known structure (flowchart, sequence, ER, class). Emit ONLY the syntax, no markdown fences.
+- auto_layout: elementIds (array, [] = all), layout ("vertical" | "horizontal" | "grid"), spacing?, columns?, originX?, originY? — use to clean up messy positions or align elements.
 
 ## RESPONSE BEHAVIOR
 
@@ -520,6 +535,73 @@ func GetDefaultTools() []Tool {
 				Type:       "object",
 				Properties: map[string]interface{}{},
 				Required:   []string{},
+			},
+		},
+		// === MERMAID & LAYOUT TOOLS ===
+		{
+			Name:        "convert_mermaid",
+			Description: "Convert Mermaid diagram syntax to Excalidraw elements. Supports flowchart, sequenceDiagram, classDiagram, etc. Use this when the user asks for a Mermaid diagram, paste-style flowchart, sequence diagram, ER diagram, class diagram, or wants to import existing Mermaid code. The frontend renders Mermaid locally; you only emit the syntax.",
+			InputSchema: struct {
+				Type       string                 `json:"type"`
+				Properties map[string]interface{} `json:"properties,omitempty"`
+				Required   []string               `json:"required,omitempty"`
+			}{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"syntax": map[string]interface{}{
+						"type":        "string",
+						"description": "Valid Mermaid syntax (e.g. 'flowchart TD\\n  A[Start] --> B{Decision}\\n  B -->|Yes| C[Done]\\n  B -->|No| D[Retry]'). Do NOT wrap in markdown fences.",
+					},
+					"x": map[string]interface{}{
+						"type":        "number",
+						"description": "Optional anchor X for the resulting diagram (default 100)",
+					},
+					"y": map[string]interface{}{
+						"type":        "number",
+						"description": "Optional anchor Y for the resulting diagram (default 100)",
+					},
+				},
+				Required: []string{"syntax"},
+			},
+		},
+		{
+			Name:        "auto_layout",
+			Description: "Auto-arrange existing elements into a clean layout. Use this when the user complains positions are messy or asks to align/organize/space-out elements. The frontend repositions elements; you only specify which elements and the layout strategy.",
+			InputSchema: struct {
+				Type       string                 `json:"type"`
+				Properties map[string]interface{} `json:"properties,omitempty"`
+				Required   []string               `json:"required,omitempty"`
+			}{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"elementIds": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Element IDs to arrange. Pass [] to arrange all current canvas elements.",
+					},
+					"layout": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"vertical", "horizontal", "grid"},
+						"description": "Layout strategy: 'vertical' (top-to-bottom flow), 'horizontal' (left-to-right flow), 'grid' (rows of `columns` items)",
+					},
+					"spacing": map[string]interface{}{
+						"type":        "number",
+						"description": "Gap in px between adjacent elements (default 40)",
+					},
+					"columns": map[string]interface{}{
+						"type":        "number",
+						"description": "For 'grid' layout: number of columns per row (default 3)",
+					},
+					"originX": map[string]interface{}{
+						"type":        "number",
+						"description": "Top-left anchor X for the arranged group (default: keep current min X)",
+					},
+					"originY": map[string]interface{}{
+						"type":        "number",
+						"description": "Top-left anchor Y for the arranged group (default: keep current min Y)",
+					},
+				},
+				Required: []string{"layout"},
 			},
 		},
 	}

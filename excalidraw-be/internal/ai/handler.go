@@ -176,6 +176,7 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// Track response data for logging
 	var responseText strings.Builder
 	var toolCalls []ToolCallLog
+	var tokenUsage *Usage
 
 	sendEvent := func(event SSEEvent) error {
 		slog.Info("[AI Handler] Sending event", "type", event.Type, "content", event.Content)
@@ -195,12 +196,19 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 					Name: event.Name,
 					Args: args,
 				})
+			case "usage":
+				if event.Usage != nil {
+					tokenUsage = event.Usage
+				}
 			case "error":
 				if logEntry != nil {
 					logEntry.Status = "error"
 					logEntry.ErrorMessage = event.Content
 				}
 			}
+		} else if event.Type == "usage" && event.Usage != nil {
+			// Even without a logger we still need to forward usage to the client.
+			tokenUsage = event.Usage
 		}
 		data, err := json.Marshal(event)
 		if err != nil {
@@ -254,11 +262,18 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		logEntry.ResponseText = responseText.String()
 		logEntry.ToolCalls = toolCalls
 		logEntry.FinishReason = "stop"
+		if tokenUsage != nil {
+			logEntry.PromptTokens = tokenUsage.PromptTokens
+			logEntry.CompletionTokens = tokenUsage.CompletionTokens
+			logEntry.TotalTokens = tokenUsage.TotalTokens
+		}
 		h.requestLogger.UpdateLog(logEntry)
 		slog.Info("[AI Log] Request completed",
 			"request_id", requestID,
 			"duration_ms", logEntry.RequestDurationMs,
 			"tool_calls", len(toolCalls),
+			"prompt_tokens", logEntry.PromptTokens,
+			"completion_tokens", logEntry.CompletionTokens,
 		)
 	}
 

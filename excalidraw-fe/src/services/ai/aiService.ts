@@ -56,6 +56,19 @@ function parseSSEEvent(data: unknown): SSEEvent | null {
     };
   }
 
+  // Usage event — backend emits totals once per request
+  if (obj.type === "usage" && obj.usage && typeof obj.usage === "object") {
+    const u = obj.usage as Record<string, unknown>;
+    return {
+      type: "usage",
+      usage: {
+        promptTokens: Number(u.promptTokens || 0),
+        completionTokens: Number(u.completionTokens || 0),
+        totalTokens: Number(u.totalTokens || 0),
+      },
+    };
+  }
+
   // Error event
   if (obj.type === "error") {
     return {

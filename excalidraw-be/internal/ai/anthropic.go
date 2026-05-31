@@ -221,6 +221,12 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, messages []Message, 
 	var currentToolName string
 	var currentToolArgs strings.Builder
 
+	// Token usage accumulators — populated from message_start (input)
+	// and message_delta (output). Emitted at the end as a single 'usage'
+	// SSEEvent so the client can render totals once.
+	var promptTokens int
+	var completionTokens int
+
 	reader := io.Reader(resp.Body)
 	lineBuf := make([]byte, 0, 4096)
 	buf := make([]byte, 4096)
@@ -252,10 +258,20 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, messages []Message, 
 							PartialJSON string `json:"partial_json"`
 						} `json:"delta,omitempty"`
 						ContentBlock struct {
-							Type  string `json:"type"`
-							ID    string `json:"id"`
-							Name  string `json:"name"`
+							Type string `json:"type"`
+							ID   string `json:"id"`
+							Name string `json:"name"`
 						} `json:"content_block,omitempty"`
+						Message struct {
+							Usage struct {
+								InputTokens  int `json:"input_tokens"`
+								OutputTokens int `json:"output_tokens"`
+							} `json:"usage"`
+						} `json:"message,omitempty"`
+						Usage struct {
+							InputTokens  int `json:"input_tokens"`
+							OutputTokens int `json:"output_tokens"`
+						} `json:"usage,omitempty"`
 					}
 
 					if err := json.Unmarshal([]byte(data), &event); err != nil {
@@ -263,6 +279,24 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, messages []Message, 
 					}
 
 					switch event.Type {
+					case "message_start":
+						// Anthropic delivers initial input/output usage on message_start
+						if event.Message.Usage.InputTokens > 0 {
+							promptTokens = event.Message.Usage.InputTokens
+						}
+						if event.Message.Usage.OutputTokens > 0 {
+							completionTokens = event.Message.Usage.OutputTokens
+						}
+
+					case "message_delta":
+						// message_delta carries the running output token count
+						if event.Usage.OutputTokens > 0 {
+							completionTokens = event.Usage.OutputTokens
+						}
+						if event.Usage.InputTokens > 0 {
+							promptTokens = event.Usage.InputTokens
+						}
+
 					case "content_block_start":
 						if event.ContentBlock.Type == "tool_use" {
 							currentToolID = event.ContentBlock.ID
@@ -320,6 +354,20 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, messages []Message, 
 				break
 			}
 			return readErr
+		}
+	}
+
+	// Emit accumulated usage once the stream is fully drained.
+	if promptTokens > 0 || completionTokens > 0 {
+		if err := streamFunc(SSEEvent{
+			Type: "usage",
+			Usage: &Usage{
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
+				TotalTokens:      promptTokens + completionTokens,
+			},
+		}); err != nil {
+			return err
 		}
 	}
 

@@ -24,6 +24,10 @@ func (a *DBClientAdapter) GetOrCreateRoom(roomKey string) (string, error) {
 	return a.db.GetOrCreateRoom(roomKey)
 }
 
+func (a *DBClientAdapter) GetOrCreateRoomEncryptionKey(roomDBID string, gen func() (string, error)) (string, error) {
+	return a.db.GetOrCreateRoomEncryptionKey(roomDBID, gen)
+}
+
 func (a *DBClientAdapter) HasRoomPassword(roomDBID string) (bool, error) {
 	return a.db.HasRoomPassword(roomDBID)
 }

@@ -108,6 +108,15 @@ func main() {
 		hub.SetDBClient(websocket.NewDBClientAdapter(dbClient))
 	}
 
+	// Phase 11–12: per-room AES-GCM message encryption.
+	// Requires a database to persist room keys.
+	if cfg.WebSocket.EncryptionEnabled && dbClient != nil {
+		hub.SetEncryptionEnabled(true)
+		logger.Info("WebSocket message encryption enabled (per-room AES-256-GCM)")
+	} else if cfg.WebSocket.EncryptionEnabled {
+		logger.Warn("WebSocket encryption requested but no DB available; running plaintext")
+	}
+
 	// Initialize AI provider
 	var aiHandler *ai.Handler
 	if cfg.AI.APIKey != "" {

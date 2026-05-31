@@ -165,6 +165,14 @@ type FileUploadedResponse struct {
 	StorageKey string `json:"storageKey"`
 }
 
+// Phase 11–12: WebSocket message encryption handshake.
+// Sent once from server → client immediately after a successful
+// join_room, plaintext, before any encrypted traffic.
+type EncryptionHandshakePayload struct {
+	RoomID string `json:"roomId"`
+	Key    string `json:"key"` // base64 AES-256 key, 44 chars
+}
+
 // Phase 11: Room Permissions & Advanced Features
 
 // JoinRoomPayload extended with password support

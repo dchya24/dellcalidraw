@@ -35,10 +35,11 @@ type ServerConfig struct {
 }
 
 type WebSocketConfig struct {
-	ReadBufferSize  int           `mapstructure:"read_buffer_size"`
-	WriteBufferSize int           `mapstructure:"write_buffer_size"`
-	PingPeriod      time.Duration `mapstructure:"ping_period"`
-	PongWait        time.Duration `mapstructure:"pong_wait"`
+	ReadBufferSize    int           `mapstructure:"read_buffer_size"`
+	WriteBufferSize   int           `mapstructure:"write_buffer_size"`
+	PingPeriod        time.Duration `mapstructure:"ping_period"`
+	PongWait          time.Duration `mapstructure:"pong_wait"`
+	EncryptionEnabled bool          `mapstructure:"encryption_enabled"`
 }
 
 type RoomConfig struct {
@@ -148,6 +149,7 @@ func bindEnvVars() {
 	_ = viper.BindEnv("websocket.write_buffer_size", "EXCALIDRAW_WEBSOCKET_WRITE_BUFFER_SIZE")
 	_ = viper.BindEnv("websocket.ping_period", "EXCALIDRAW_WEBSOCKET_PING_PERIOD")
 	_ = viper.BindEnv("websocket.pong_wait", "EXCALIDRAW_WEBSOCKET_PONG_WAIT")
+	_ = viper.BindEnv("websocket.encryption_enabled", "EXCALIDRAW_WEBSOCKET_ENCRYPTION_ENABLED")
 
 	// Room
 	_ = viper.BindEnv("room.capacity", "EXCALIDRAW_ROOM_CAPACITY")
@@ -214,6 +216,7 @@ func setDefaults() {
 	viper.SetDefault("websocket.write_buffer_size", 1024)
 	viper.SetDefault("websocket.ping_period", 54*time.Second)
 	viper.SetDefault("websocket.pong_wait", 60*time.Second)
+	viper.SetDefault("websocket.encryption_enabled", true)
 
 	// Room defaults
 	viper.SetDefault("room.capacity", 50)

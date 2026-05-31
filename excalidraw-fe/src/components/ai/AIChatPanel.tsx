@@ -1,4 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Send,
   X,
@@ -9,6 +11,7 @@ import {
   Trash2,
   ChevronDown,
   Undo2,
+  Eye,
 } from "lucide-react";
 import { useAIChatStore } from "../../store/useAIChatStore";
 import { useWhiteboardStore } from "../../store/useWhiteboardStore";
@@ -53,6 +56,34 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
   const trackedUsage = useRef<TokenUsage | null>(null);
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  // Resizable panel: width/height stored in px, persisted to
+  // localStorage. Bottom-left handle resizes both axes; the panel is
+  // pinned to bottom-right of the viewport, so drag down-right shrinks
+  // and drag up-left grows.
+  const [panelSize, setPanelSize] = useState<{ w: number; h: number }>(() => {
+    if (typeof window === "undefined") return { w: 380, h: 560 };
+    try {
+      const raw = localStorage.getItem("ai-chat-panel-size");
+      if (raw) {
+        const parsed = JSON.parse(raw) as { w: number; h: number };
+        if (Number.isFinite(parsed.w) && Number.isFinite(parsed.h)) {
+          return clampPanelSize(parsed.w, parsed.h);
+        }
+      }
+    } catch {
+      // fall through
+    }
+    return { w: 380, h: 560 };
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ai-chat-panel-size", JSON.stringify(panelSize));
+    } catch {
+      // localStorage may be disabled — not critical
+    }
+  }, [panelSize]);
 
   // Initialize conversation when tab changes
   useEffect(() => {
@@ -246,6 +277,25 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
               }
               break;
             }
+            if (toolName === "create_group") {
+              applyCreateGroup(excalidrawAPI, args);
+              break;
+            }
+            if (toolName === "duplicate_elements") {
+              const newIds = applyDuplicateElements(excalidrawAPI, args);
+              for (const id of newIds) {
+                trackedElementIds.current.push(id);
+              }
+              break;
+            }
+            if (toolName === "resize_elements") {
+              applyResizeElements(excalidrawAPI, args);
+              break;
+            }
+            if (toolName === "align_elements") {
+              applyAlignElements(excalidrawAPI, args);
+              break;
+            }
             if (toolName === "convert_mermaid") {
               // Async — don't await; let stream continue. New IDs are tracked
               // when the parser resolves.
@@ -384,6 +434,30 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
     }
   };
 
+  // Highlight AI-generated elements on the canvas: select them and
+  // scroll the viewport to fit. Undoing or starting a new generation
+  // clears the selection naturally.
+  const handleHighlightAI = useCallback((elementIds: string[]) => {
+    if (!excalidrawAPI || elementIds.length === 0) return;
+    const elements = excalidrawAPI.getSceneElements();
+    const present = elements.filter(
+      (el) => elementIds.includes(el.id) && !el.isDeleted,
+    );
+    if (present.length === 0) return;
+
+    const selectedElementIds: Record<string, true> = {};
+    for (const el of present) selectedElementIds[el.id] = true;
+
+    excalidrawAPI.updateScene({
+      appState: {
+        selectedElementIds,
+      },
+    });
+
+    // Center viewport on the highlighted set.
+    excalidrawAPI.scrollToContent(present, { fitToContent: true, animate: true });
+  }, [excalidrawAPI]);
+
   // Undo AI-generated elements for a specific message
   const handleUndoAI = useCallback((elementIds: string[]) => {
     if (!excalidrawAPI || elementIds.length === 0) return;
@@ -440,11 +514,28 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
   }
 
   return (
-    <div className="fixed bottom-16 right-4 w-3/12 h-125 max-h-[70vh] z-50 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+    <div
+      className="fixed bottom-16 right-4 z-50 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
       style={{
+        width: `${panelSize.w}px`,
+        height: `${panelSize.h}px`,
+        maxWidth: "calc(100vw - 32px)",
+        maxHeight: "calc(100vh - 96px)",
         background: "var(--bg-color, white)",
         border: "1px solid var(--border-color, #e5e7eb)",
       }}>
+      {/* Resize handle (bottom-left corner). The panel is anchored to
+          bottom-right, so the visible drag corner is bottom-left.
+          Pointer events resize via dx/dy on pointermove. */}
+      <div
+        onPointerDown={(e) => startPanelResize(e, panelSize, setPanelSize)}
+        className="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize z-10"
+        title="Drag to resize"
+        style={{
+          background:
+            "linear-gradient(135deg, transparent 0%, transparent 55%, rgba(100,100,100,0.35) 55%, rgba(100,100,100,0.35) 65%, transparent 65%, transparent 75%, rgba(100,100,100,0.35) 75%, rgba(100,100,100,0.35) 85%, transparent 85%)",
+        }}
+      />
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 border-b"
@@ -570,7 +661,60 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
                       </div>
                     )}
                     {msg.content && (
-                      <div className="whitespace-pre-wrap">{msg.content}</div>
+                      msg.role === "assistant" ? (
+                        <div className="chat-md">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              // Open links in a new tab; cap defaults so the
+                              // chat bubble doesn't blow out horizontally.
+                              a: ({ children, ...props }) => (
+                                <a
+                                  {...props}
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  className="underline text-blue-600 hover:text-blue-800"
+                                >
+                                  {children}
+                                </a>
+                              ),
+                              code: ({ className, children, ...props }) => {
+                                const inline = !className;
+                                if (inline) {
+                                  return (
+                                    <code
+                                      className="px-1 py-0.5 rounded bg-gray-200 text-[0.85em] font-mono"
+                                      {...props}
+                                    >
+                                      {children}
+                                    </code>
+                                  );
+                                }
+                                return (
+                                  <pre className="my-1 p-2 rounded bg-gray-200 overflow-x-auto text-[0.85em] font-mono">
+                                    <code className={className} {...props}>
+                                      {children}
+                                    </code>
+                                  </pre>
+                                );
+                              },
+                              ul: ({ children }) => (
+                                <ul className="list-disc pl-4 my-1 space-y-0.5">{children}</ul>
+                              ),
+                              ol: ({ children }) => (
+                                <ol className="list-decimal pl-4 my-1 space-y-0.5">{children}</ol>
+                              ),
+                              p: ({ children }) => (
+                                <p className="my-1 first:mt-0 last:mb-0">{children}</p>
+                              ),
+                            }}
+                          >
+                            {msg.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                      )
                     )}
                     {showToolBadges && (
                       <div className="mt-2 flex flex-wrap gap-1">
@@ -583,14 +727,24 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
                           </span>
                         ))}
                         {msg.createdElementIds && msg.createdElementIds.length > 0 && !isStreaming && (
-                          <button
-                            onClick={() => handleUndoAI(msg.createdElementIds!)}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-xs hover:bg-red-100 transition-colors cursor-pointer"
-                            title={`Undo ${msg.createdElementIds.length} elements`}
-                          >
-                            <Undo2 size={10} />
-                            Undo
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleHighlightAI(msg.createdElementIds!)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs hover:bg-blue-100 transition-colors cursor-pointer"
+                              title={`Show ${msg.createdElementIds.length} elements on canvas`}
+                            >
+                              <Eye size={10} />
+                              Show
+                            </button>
+                            <button
+                              onClick={() => handleUndoAI(msg.createdElementIds!)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-xs hover:bg-red-100 transition-colors cursor-pointer"
+                              title={`Undo ${msg.createdElementIds.length} elements`}
+                            >
+                              <Undo2 size={10} />
+                              Undo
+                            </button>
+                          </>
                         )}
                       </div>
                     )}
@@ -706,6 +860,10 @@ const TOOL_META: Record<string, { icon: string; label: string }> = {
   camera_update: { icon: "📷", label: "Camera" },
   convert_mermaid: { icon: "🧬", label: "Mermaid" },
   auto_layout: { icon: "📏", label: "Auto-layout" },
+  create_group: { icon: "📦", label: "Grouped" },
+  duplicate_elements: { icon: "⧉", label: "Duplicated" },
+  resize_elements: { icon: "↔️", label: "Resized" },
+  align_elements: { icon: "📏", label: "Aligned" },
 };
 
 function getToolCallSummary(toolCalls: ToolCall[]): { icon: string; label: string }[] {
@@ -1347,4 +1505,250 @@ async function applyConvertMermaid(
     console.error("[AIChatPanel] Mermaid parse error:", err);
     return [];
   }
+}
+
+// ─── Group / Duplicate / Resize / Align Helpers ─────────────────────────────────────────────────
+
+function applyCreateGroup(
+  api: ExcalidrawImperativeAPI,
+  args: Record<string, unknown>,
+): void {
+  const ids = (args.elementIds as string[]) || [];
+  if (ids.length < 2) return;
+
+  const groupId = crypto.randomUUID();
+  const elements = api.getSceneElements();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updated = (elements as any[]).map((el) => {
+    if (!ids.includes(el.id)) return el;
+    const groupIds = Array.isArray(el.groupIds) ? [...el.groupIds] : [];
+    if (!groupIds.includes(groupId)) {
+      groupIds.push(groupId);
+    }
+    return { ...el, groupIds };
+  });
+  api.updateScene({ elements: updated });
+}
+
+function applyDuplicateElements(
+  api: ExcalidrawImperativeAPI,
+  args: Record<string, unknown>,
+): string[] {
+  const ids = (args.elementIds as string[]) || [];
+  if (ids.length === 0) return [];
+  const dx = Number(args.deltaX ?? 40);
+  const dy = Number(args.deltaY ?? 40);
+
+  const elements = api.getSceneElements();
+  const idSet = new Set(ids);
+  // Map old id -> new id so bound text labels can re-target their
+  // containers via containerId.
+  const idMap = new Map<string, string>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const candidates = (elements as any[]).filter(
+    (el) => idSet.has(el.id) && !el.isDeleted,
+  );
+  if (candidates.length === 0) return [];
+
+  // Also include bound text labels whose container is being duplicated,
+  // even if the LLM didn't pass them explicitly.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const el of elements as any[]) {
+    if (el.type === "text" && el.containerId && idSet.has(el.containerId) && !idSet.has(el.id)) {
+      candidates.push(el);
+      idSet.add(el.id);
+    }
+  }
+
+  for (const el of candidates) {
+    idMap.set(el.id, crypto.randomUUID());
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const clones: any[] = candidates.map((el) => {
+    const newId = idMap.get(el.id)!;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const clone: any = {
+      ...el,
+      id: newId,
+      x: el.x + dx,
+      y: el.y + dy,
+      seed: Math.floor(Math.random() * 2 ** 31),
+      versionNonce: Math.floor(Math.random() * 2 ** 31),
+      version: 1,
+      updated: Date.now(),
+    };
+    // Re-target containerId for cloned text labels
+    if (clone.containerId && idMap.has(clone.containerId)) {
+      clone.containerId = idMap.get(clone.containerId);
+    }
+    // Strip boundElements references that point outside the clone set
+    if (Array.isArray(clone.boundElements)) {
+      clone.boundElements = clone.boundElements
+        .filter((b: { id: string }) => idMap.has(b.id))
+        .map((b: { id: string; type: string }) => ({
+          ...b,
+          id: idMap.get(b.id)!,
+        }));
+    }
+    return clone;
+  });
+
+  api.updateScene({ elements: [...elements, ...clones] });
+  return clones.map((c) => c.id);
+}
+
+function applyResizeElements(
+  api: ExcalidrawImperativeAPI,
+  args: Record<string, unknown>,
+): void {
+  const ids = (args.elementIds as string[]) || [];
+  if (ids.length === 0) return;
+
+  const w = args.width !== undefined ? Math.max(20, Number(args.width)) : undefined;
+  const h = args.height !== undefined ? Math.max(20, Number(args.height)) : undefined;
+  const scale = args.scale !== undefined ? Number(args.scale) : undefined;
+
+  if (w === undefined && h === undefined && scale === undefined) return;
+
+  const elements = api.getSceneElements();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updated = (elements as any[]).map((el) => {
+    if (!ids.includes(el.id)) return el;
+    if (el.type === "arrow") return el; // arrows sized by their bindings
+    let nextW = el.width;
+    let nextH = el.height;
+    if (scale !== undefined && scale > 0) {
+      nextW = Math.max(20, el.width * scale);
+      nextH = Math.max(20, el.height * scale);
+    }
+    if (w !== undefined) nextW = w;
+    if (h !== undefined) nextH = h;
+    return { ...el, width: nextW, height: nextH };
+  });
+  api.updateScene({ elements: updated });
+}
+
+function applyAlignElements(
+  api: ExcalidrawImperativeAPI,
+  args: Record<string, unknown>,
+): void {
+  const ids = (args.elementIds as string[]) || [];
+  const alignment = String(args.alignment || "");
+  if (ids.length < 2 || !alignment) return;
+
+  const elements = api.getSceneElements();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const targets = (elements as any[]).filter(
+    (el) => ids.includes(el.id) && !el.isDeleted,
+  );
+  if (targets.length < 2) return;
+
+  // Reference values across the selection
+  const minX = Math.min(...targets.map((e) => e.x));
+  const maxRight = Math.max(...targets.map((e) => e.x + e.width));
+  const minY = Math.min(...targets.map((e) => e.y));
+  const maxBottom = Math.max(...targets.map((e) => e.y + e.height));
+  const centerX = (minX + maxRight) / 2;
+  const centerY = (minY + maxBottom) / 2;
+
+  // Track per-element delta so bound text labels follow their container.
+  const deltas = new Map<string, { dx: number; dy: number }>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updated = (elements as any[]).map((el) => {
+    if (!ids.includes(el.id) || el.isDeleted) return el;
+    let nx = el.x;
+    let ny = el.y;
+    switch (alignment) {
+      case "left":
+        nx = minX;
+        break;
+      case "right":
+        nx = maxRight - el.width;
+        break;
+      case "top":
+        ny = minY;
+        break;
+      case "bottom":
+        ny = maxBottom - el.height;
+        break;
+      case "center-x":
+        nx = centerX - el.width / 2;
+        break;
+      case "center-y":
+        ny = centerY - el.height / 2;
+        break;
+      default:
+        return el;
+    }
+    deltas.set(el.id, { dx: nx - el.x, dy: ny - el.y });
+    return { ...el, x: nx, y: ny };
+  });
+
+  // Shift bound text labels with their containers
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const final = updated.map((el: any) => {
+    if (el.type === "text" && el.containerId && deltas.has(el.containerId)) {
+      const d = deltas.get(el.containerId)!;
+      return { ...el, x: el.x + d.dx, y: el.y + d.dy };
+    }
+    return el;
+  });
+
+  api.updateScene({ elements: final });
+}
+
+// ─── Resizable Panel Helpers ───────────────────────────────────────────────────────────────
+
+const PANEL_MIN_W = 320;
+const PANEL_MIN_H = 360;
+
+function clampPanelSize(w: number, h: number): { w: number; h: number } {
+  const maxW =
+    typeof window === "undefined"
+      ? 1024
+      : Math.max(PANEL_MIN_W, window.innerWidth - 32);
+  const maxH =
+    typeof window === "undefined"
+      ? 800
+      : Math.max(PANEL_MIN_H, window.innerHeight - 96);
+  return {
+    w: Math.min(maxW, Math.max(PANEL_MIN_W, w)),
+    h: Math.min(maxH, Math.max(PANEL_MIN_H, h)),
+  };
+}
+
+// Start a pointer-driven resize from the bottom-left corner. Panel is
+// pinned to bottom-right, so left motion grows width and up motion
+// grows height. Listeners are attached to window so the drag survives
+// pointer leaving the small handle.
+function startPanelResize(
+  e: React.PointerEvent<HTMLDivElement>,
+  current: { w: number; h: number },
+  setPanelSize: React.Dispatch<
+    React.SetStateAction<{ w: number; h: number }>
+  >,
+): void {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const startW = current.w;
+  const startH = current.h;
+
+  const onMove = (ev: PointerEvent) => {
+    const dx = startX - ev.clientX; // drag left = positive
+    const dy = startY - ev.clientY; // drag up   = positive
+    setPanelSize(clampPanelSize(startW + dx, startH + dy));
+  };
+  const onUp = () => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+  };
+
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
 }

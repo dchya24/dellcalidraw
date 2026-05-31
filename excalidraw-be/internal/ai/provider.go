@@ -213,6 +213,12 @@ Control viewport with camera_update:
 - convert_mermaid: syntax (string), x?, y? — prefer this for full diagrams from a known structure (flowchart, sequence, ER, class). Emit ONLY the syntax, no markdown fences.
 - auto_layout: elementIds (array, [] = all), layout ("vertical" | "horizontal" | "grid"), spacing?, columns?, originX?, originY? — use to clean up messy positions or align elements.
 
+**Grouping / Duplication / Resize / Alignment:**
+- create_group: elementIds — logically group 2+ elements so they move together.
+- duplicate_elements: elementIds, deltaX?, deltaY? — clone elements with an offset (great for repeated rows / swimlanes).
+- resize_elements: elementIds, width? | height? | scale? — change size while keeping top-left fixed.
+- align_elements: elementIds, alignment ("left" | "right" | "top" | "bottom" | "center-x" | "center-y") — snap positions onto a shared axis.
+
 ## RESPONSE BEHAVIOR
 
 You are a diagram assistant. Your PRIMARY job is to CREATE diagrams using tool calls (create_rectangle, create_arrow, etc).
@@ -602,6 +608,108 @@ func GetDefaultTools() []Tool {
 					},
 				},
 				Required: []string{"layout"},
+			},
+		},
+		// === GROUPING / DUPLICATION / SIZING / ALIGNMENT ===
+		{
+			Name:        "create_group",
+			Description: "Group existing elements together so they move and select as one unit. Frontend assigns a shared groupId. Use after creating a logical cluster.",
+			InputSchema: struct {
+				Type       string                 `json:"type"`
+				Properties map[string]interface{} `json:"properties,omitempty"`
+				Required   []string               `json:"required,omitempty"`
+			}{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"elementIds": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Element IDs to group. Must contain at least 2 IDs.",
+					},
+				},
+				Required: []string{"elementIds"},
+			},
+		},
+		{
+			Name:        "duplicate_elements",
+			Description: "Clone existing elements with a positional offset. Useful for repeating a row of nodes or replicating a swimlane. Bound text labels are duplicated alongside their containers.",
+			InputSchema: struct {
+				Type       string                 `json:"type"`
+				Properties map[string]interface{} `json:"properties,omitempty"`
+				Required   []string               `json:"required,omitempty"`
+			}{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"elementIds": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Element IDs to duplicate.",
+					},
+					"deltaX": map[string]interface{}{
+						"type":        "number",
+						"description": "Horizontal offset for the clones (default 40).",
+					},
+					"deltaY": map[string]interface{}{
+						"type":        "number",
+						"description": "Vertical offset for the clones (default 40).",
+					},
+				},
+				Required: []string{"elementIds"},
+			},
+		},
+		{
+			Name:        "resize_elements",
+			Description: "Change width and/or height of existing elements. Element top-left position stays fixed. Skips arrows (sized by their bindings).",
+			InputSchema: struct {
+				Type       string                 `json:"type"`
+				Properties map[string]interface{} `json:"properties,omitempty"`
+				Required   []string               `json:"required,omitempty"`
+			}{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"elementIds": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Element IDs to resize.",
+					},
+					"width": map[string]interface{}{
+						"type":        "number",
+						"description": "New width in px (omit to keep). Min 20.",
+					},
+					"height": map[string]interface{}{
+						"type":        "number",
+						"description": "New height in px (omit to keep). Min 20.",
+					},
+					"scale": map[string]interface{}{
+						"type":        "number",
+						"description": "Multiplicative scale (e.g. 1.5 = 150%). Applied to current size when width/height not given.",
+					},
+				},
+				Required: []string{"elementIds"},
+			},
+		},
+		{
+			Name:        "align_elements",
+			Description: "Align selected elements along an axis. Common when the AI lays out shapes by hand and rows / columns drift. Bound text labels follow their containers.",
+			InputSchema: struct {
+				Type       string                 `json:"type"`
+				Properties map[string]interface{} `json:"properties,omitempty"`
+				Required   []string               `json:"required,omitempty"`
+			}{
+				Type: "object",
+				Properties: map[string]interface{}{
+					"elementIds": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "Element IDs to align.",
+					},
+					"alignment": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"left", "right", "top", "bottom", "center-x", "center-y"},
+						"description": "Axis to align on. left/right/center-x snap X positions; top/bottom/center-y snap Y positions.",
+					},
+				},
+				Required: []string{"elementIds", "alignment"},
 			},
 		},
 	}

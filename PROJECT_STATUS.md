@@ -413,12 +413,14 @@ See `docs/TESTING.md` for the running guide and what's still uncovered.
 8. ✅ OT design plan (`docs/plans/2026-05-31-operational-transformation.md`)
 9. ✅ Test scaffolding (Vitest FE) + pure-logic tests both stacks
 10. ✅ Bug fix: refresh tokens now opaque random 256-bit (was deterministic JWT)
+11. ✅ Password reset email delivery (`internal/email`, SMTP + log fallback)
 
 **Following:**
-11. HTTP integration tests (would unblock guest→cloud sync verification)
-12. Production monitoring (Prometheus/Grafana/Sentry)
-13. File encryption at rest
-14. OT implementation (per the plan, after monitoring + replay harness)
+12. Wire room invitation email (template ready, just call Send)
+13. HTTP integration tests (would unblock guest→cloud sync verification)
+14. Production monitoring (Prometheus/Grafana/Sentry)
+15. File encryption at rest
+16. OT implementation (per the plan, after monitoring + replay harness)
 
 ---
 

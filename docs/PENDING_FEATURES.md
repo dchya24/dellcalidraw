@@ -161,7 +161,7 @@ itself (user said current providers are enough).
 
 ## Auth & User Management
 
-### 13. Password reset email delivery 🟡
+### 13. Password reset email delivery 🟡 ✅ DONE 2026-05-31
 **Why:** Backend creates the reset token and `slog.Info`s the URL —
 no email is actually sent. Production-blocker for password reset.
 
@@ -177,6 +177,16 @@ no email is actually sent. Production-blocker for password reset.
 configured (current behavior). Same email path will be reused for
 invitation emails (#15) and account deletion confirmations.
 
+**Resolution:** Landed in `feat(email): SMTP-based transactional email
+for password reset`. New `internal/email/` package with `Sender`
+interface, `LogSender` (dev fallback), and `SMTPSender` (net/smtp
++ STARTTLS). Templates for password reset and room invitations
+(reused for #15) live in `templates.go`. Config under
+`EXCALIDRAW_EMAIL_*`; `auth_handlers.go::ForgotPassword` now sends
+actual email. Compose + .env.example updated. 12 unit tests cover
+fallback selection, MIME shape, address parsing, template content,
+and HTML escaping.
+
 ### 14. Two-factor authentication (TOTP) 🟢
 **Why:** Account hardening. Standard expectation for SaaS.
 **Effort:** 2 days
@@ -188,11 +198,13 @@ invitation emails (#15) and account deletion confirmations.
   `users.backup_codes_hash`
 - FE: settings panel with QR enrollment, verify-on-login flow
 
-### 15. Email-based room invitations (delivery) 🟢
+### 15. Email-based room invitations (delivery) 🟡 partial — sender ready
 **Why:** `room_invitations` table exists, `CreateInvitation` returns
 an invite URL, but no email is sent. Same gap as #13.
 **Effort:** 0.5 day (after #13)
 **Files:** plug `internal/email` into the invitation handler.
+**Status:** `email.RoomInvitationMessage` template is shipped; just
+needs the WS / HTTP invitation handler to call `email.Send` with it.
 
 ### 16. Profile management UI polish 🟢
 **Why:** Backend has `UpdateUserProfile` (username + avatar) but I

@@ -41,6 +41,17 @@ services:
       - EXCALIDRAW_STORAGE_BUCKET=${EXCALIDRAW_STORAGE_BUCKET:-excalidraw-files}
       - EXCALIDRAW_STORAGE_REGION=${EXCALIDRAW_STORAGE_REGION:-us-east-1}
       - EXCALIDRAW_STORAGE_USE_SSL=${EXCALIDRAW_STORAGE_USE_SSL:-true}
+
+      # Email delivery (password reset, invitations). "log" prints to
+      # stdout for dev; switch to "smtp" in production.
+      - EXCALIDRAW_EMAIL_PROVIDER=${EXCALIDRAW_EMAIL_PROVIDER:-log}
+      - EXCALIDRAW_EMAIL_FROM=${EXCALIDRAW_EMAIL_FROM}
+      - EXCALIDRAW_EMAIL_BASE_URL=${EXCALIDRAW_EMAIL_BASE_URL:-http://localhost:3000}
+      - EXCALIDRAW_EMAIL_SMTP_HOST=${EXCALIDRAW_EMAIL_SMTP_HOST}
+      - EXCALIDRAW_EMAIL_SMTP_PORT=${EXCALIDRAW_EMAIL_SMTP_PORT:-587}
+      - EXCALIDRAW_EMAIL_SMTP_USERNAME=${EXCALIDRAW_EMAIL_SMTP_USERNAME}
+      - EXCALIDRAW_EMAIL_SMTP_PASSWORD=${EXCALIDRAW_EMAIL_SMTP_PASSWORD}
+      - EXCALIDRAW_EMAIL_SMTP_STARTTLS=${EXCALIDRAW_EMAIL_SMTP_STARTTLS:-true}
     # Optional: load additional/secret values from a backend-local file.
     # Comment this out if you supply everything via the host environment
     # or a secrets manager.

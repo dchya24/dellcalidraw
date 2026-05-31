@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,17 +13,38 @@ import (
 
 	"github.com/you/excalidraw-be/internal/auth"
 	"github.com/you/excalidraw-be/internal/database"
+	"github.com/you/excalidraw-be/internal/email"
 )
 
 type AuthHandler struct {
 	authService *auth.AuthService
 	db          *database.PostgresClient
+	emailer     email.Sender
+	emailFrom   string // RFC-5322 mailbox — carried for logging only
+	appBaseURL  string // used to build links inside transactional emails
 }
 
 func NewAuthHandler(authService *auth.AuthService, db *database.PostgresClient) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
 		db:          db,
+		// Default emailer when none injected: a no-op log sender so
+		// existing call sites that haven't been updated still compile
+		// and behave the same as before.
+		emailer:    &email.LogSender{},
+		appBaseURL: "http://localhost:3000",
+	}
+}
+
+// SetEmailer injects the transactional email sender + the user-facing
+// base URL used to build links. Wired up in main.go from config.
+func (ah *AuthHandler) SetEmailer(sender email.Sender, from, baseURL string) {
+	if sender != nil {
+		ah.emailer = sender
+	}
+	ah.emailFrom = from
+	if baseURL != "" {
+		ah.appBaseURL = baseURL
 	}
 }
 
@@ -441,18 +463,39 @@ func (ah *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// In production, send email here
-	// For now, log the token (development only)
-	resetURL := fmt.Sprintf("http://localhost:3000/reset-password?token=%s", token.Token)
-	slog.Info("Password reset requested",
-		"email", req.Email,
-		"userID", user.ID,
-		"resetURL", resetURL,
-		"expiresAt", token.ExpiresAt,
-	)
+	// Build the reset URL using the configured app base URL so links
+	// work in production deployments, not just localhost.
+	baseURL := strings.TrimRight(ah.appBaseURL, "/")
+	if baseURL == "" {
+		baseURL = "http://localhost:3000"
+	}
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", baseURL, token.Token)
 
-	// TODO: Send email with reset link
-	// emailService.SendPasswordResetEmail(user.Email, resetURL)
+	// Compute expiry minutes from the actual token TTL (1 hour today).
+	expiryMinutes := int(time.Until(token.ExpiresAt).Minutes())
+	if expiryMinutes < 1 {
+		expiryMinutes = 60
+	}
+
+	// Send the email. We intentionally don't surface delivery errors to
+	// the client — the response is identical whether the user exists or
+	// not, to prevent enumeration. Failures are logged for ops.
+	msg := email.PasswordResetMessage(req.Email, resetURL, expiryMinutes)
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	if err := ah.emailer.Send(ctx, msg); err != nil {
+		slog.Error("Failed to deliver password reset email",
+			"error", err,
+			"email", req.Email,
+			"userID", user.ID,
+		)
+	} else {
+		slog.Info("Password reset email queued",
+			"email", req.Email,
+			"userID", user.ID,
+			"expiresAt", token.ExpiresAt,
+		)
+	}
 
 	successResponse()
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/you/excalidraw-be/internal/auth"
 	"github.com/you/excalidraw-be/internal/config"
 	"github.com/you/excalidraw-be/internal/database"
+	"github.com/you/excalidraw-be/internal/email"
 	appmiddleware "github.com/you/excalidraw-be/internal/middleware"
 	"github.com/you/excalidraw-be/internal/room"
 	"github.com/you/excalidraw-be/internal/storage"
@@ -198,6 +199,28 @@ func main() {
 	// Auth routes (public)
 	if dbClient != nil {
 		authHandler := NewAuthHandler(authService, dbClient)
+
+		// Inject the configured email sender so password reset (and
+		// future flows like invitations) actually deliver mail in
+		// production. Falls back to LogSender in dev when no provider
+		// is configured.
+		emailSender := email.New(email.Config{
+			Provider: cfg.Email.Provider,
+			From:     cfg.Email.From,
+			BaseURL:  cfg.Email.BaseURL,
+			SMTP: email.SMTPConfig{
+				Host:        cfg.Email.SMTPHost,
+				Port:        cfg.Email.SMTPPort,
+				Username:    cfg.Email.SMTPUsername,
+				Password:    cfg.Email.SMTPPassword,
+				UseSTARTTLS: cfg.Email.SMTPStartTLS,
+			},
+		})
+		authHandler.SetEmailer(emailSender, cfg.Email.From, cfg.Email.BaseURL)
+		logger.Info("Email sender configured",
+			zap.String("provider", cfg.Email.Provider),
+			zap.String("from", cfg.Email.From),
+		)
 
 		// Auth-endpoint rate limiter: stricter than AI — prevents
 		// credential stuffing / signup spam. 1 req/s burst 5 per IP.

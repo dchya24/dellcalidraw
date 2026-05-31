@@ -21,6 +21,7 @@ type Config struct {
 	Log       LogConfig       `mapstructure:"log"`
 	CORS      CORSConfig      `mapstructure:"cors"`
 	Security  SecurityConfig  `mapstructure:"security"`
+	Email     EmailConfig     `mapstructure:"email"`
 }
 
 // IsDevelopment returns true if running in development mode
@@ -107,6 +108,20 @@ type SecurityConfig struct {
 	HSTSMaxAge  int    `mapstructure:"hsts_max_age"`
 	HSTSPreload bool   `mapstructure:"hsts_preload"`
 	CSP         string `mapstructure:"csp"`
+}
+
+// EmailConfig configures transactional email delivery (password
+// reset, invitations). Provider "smtp" requires SMTP.Host and From.
+// Empty / "log" prints messages to slog (dev fallback).
+type EmailConfig struct {
+	Provider     string `mapstructure:"provider"` // log | smtp
+	From         string `mapstructure:"from"`
+	BaseURL      string `mapstructure:"base_url"`
+	SMTPHost     string `mapstructure:"smtp_host"`
+	SMTPPort     int    `mapstructure:"smtp_port"`
+	SMTPUsername string `mapstructure:"smtp_username"`
+	SMTPPassword string `mapstructure:"smtp_password"`
+	SMTPStartTLS bool   `mapstructure:"smtp_starttls"`
 }
 
 func Load(configPath string) (*Config, error) {
@@ -219,6 +234,16 @@ func bindEnvVars() {
 	_ = viper.BindEnv("security.hsts_max_age", "EXCALIDRAW_SECURITY_HSTS_MAX_AGE")
 	_ = viper.BindEnv("security.hsts_preload", "EXCALIDRAW_SECURITY_HSTS_PRELOAD")
 	_ = viper.BindEnv("security.csp", "EXCALIDRAW_SECURITY_CSP")
+
+	// Email
+	_ = viper.BindEnv("email.provider", "EXCALIDRAW_EMAIL_PROVIDER")
+	_ = viper.BindEnv("email.from", "EXCALIDRAW_EMAIL_FROM")
+	_ = viper.BindEnv("email.base_url", "EXCALIDRAW_EMAIL_BASE_URL")
+	_ = viper.BindEnv("email.smtp_host", "EXCALIDRAW_EMAIL_SMTP_HOST")
+	_ = viper.BindEnv("email.smtp_port", "EXCALIDRAW_EMAIL_SMTP_PORT")
+	_ = viper.BindEnv("email.smtp_username", "EXCALIDRAW_EMAIL_SMTP_USERNAME")
+	_ = viper.BindEnv("email.smtp_password", "EXCALIDRAW_EMAIL_SMTP_PASSWORD")
+	_ = viper.BindEnv("email.smtp_starttls", "EXCALIDRAW_EMAIL_SMTP_STARTTLS")
 }
 
 func setDefaults() {
@@ -286,4 +311,12 @@ func setDefaults() {
 	viper.SetDefault("cors.allowed_headers", []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"})
 	viper.SetDefault("cors.allow_credentials", true)
 	viper.SetDefault("cors.max_age", 300)
+
+	// Email defaults: provider=log so dev environments don't need
+	// SMTP credentials. Operators flip to provider=smtp in prod.
+	viper.SetDefault("email.provider", "log")
+	viper.SetDefault("email.from", "")
+	viper.SetDefault("email.base_url", "http://localhost:3000")
+	viper.SetDefault("email.smtp_port", 587)
+	viper.SetDefault("email.smtp_starttls", true)
 }

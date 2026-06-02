@@ -1,91 +1,49 @@
 import { useAuthStore } from '../store/useAuthStore';
-import { apiService } from './api';
 
-// Token refresh configuration
-const TOKEN_REFRESH_THRESHOLD_MS = 2 * 60 * 1000; // Refresh 2 minutes before expiry
-const TOKEN_CHECK_INTERVAL_MS = 30 * 1000; // Check every 30 seconds
-
+/**
+ * Token Refresh Service - Interceptor-based approach
+ * 
+ * Strategy:
+ * 1. Refresh token ONLY when API returns 401 Unauthorized
+ * 2. Queue pending requests during refresh
+ * 3. Retry failed requests with new token
+ * 4. No background polling/timers
+ */
 class TokenRefreshService {
-  private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private isRefreshing = false;
-  private tokenExpiresAt: number | null = null;
+  private refreshPromise: Promise<boolean> | null = null;
+  private pendingRequests: Array<{
+    resolve: (value: boolean) => void;
+    reject: (error: Error) => void;
+  }> = [];
 
   /**
-   * Start the auto-refresh service
+   * Start the service (no-op for compatibility)
+   * Old polling mechanism removed
    */
   start(): void {
-    if (this.refreshTimer) {
-      return; // Already running
-    }
-
-    console.log('[TokenRefresh] Starting auto-refresh service');
-
-    // Initial check
-    this.checkAndRefresh();
-
-    // Set up periodic check
-    this.refreshTimer = setInterval(() => {
-      this.checkAndRefresh();
-    }, TOKEN_CHECK_INTERVAL_MS);
+    console.log('[TokenRefresh] Service ready (on-demand refresh only)');
   }
 
   /**
-   * Stop the auto-refresh service
+   * Stop the service (no-op for compatibility)
    */
   stop(): void {
-    if (this.refreshTimer) {
-      console.log('[TokenRefresh] Stopping auto-refresh service');
-      clearInterval(this.refreshTimer);
-      this.refreshTimer = null;
-    }
-    this.tokenExpiresAt = null;
+    console.log('[TokenRefresh] Service stopped');
+    this.isRefreshing = false;
+    this.refreshPromise = null;
+    this.pendingRequests = [];
   }
 
   /**
-   * Set the token expiration time (called after login/refresh)
+   * Refresh tokens when API returns 401
+   * All concurrent calls will wait for the same refresh promise
    */
-  setTokenExpiry(expiresAt: Date | string): void {
-    const expiry = typeof expiresAt === 'string' ? new Date(expiresAt) : expiresAt;
-    this.tokenExpiresAt = expiry.getTime();
-    console.log('[TokenRefresh] Token expires at:', expiry.toISOString());
-  }
-
-  /**
-   * Check if token needs refresh and refresh if necessary
-   */
-  private async checkAndRefresh(): Promise<void> {
-    const { isAuthenticated, refreshToken, accessToken } = useAuthStore.getState();
-
-    if (!isAuthenticated || !refreshToken || !accessToken) {
-      return;
-    }
-
-    // Try to get expiry from stored value or decode from token
-    if (!this.tokenExpiresAt) {
-      this.tokenExpiresAt = this.getExpiryFromToken(accessToken);
-    }
-
-    if (!this.tokenExpiresAt) {
-      return;
-    }
-
-    const now = Date.now();
-    const timeUntilExpiry = this.tokenExpiresAt - now;
-
-    // Check if we need to refresh
-    if (timeUntilExpiry <= TOKEN_REFRESH_THRESHOLD_MS) {
-      console.log('[TokenRefresh] Token expiring soon, refreshing...');
-      await this.refreshTokens();
-    }
-  }
-
-  /**
-   * Refresh the tokens
-   */
-  private async refreshTokens(): Promise<boolean> {
-    if (this.isRefreshing) {
-      console.log('[TokenRefresh] Already refreshing, skipping');
-      return false;
+  async refreshTokens(): Promise<boolean> {
+    // If already refreshing, return the existing promise
+    if (this.isRefreshing && this.refreshPromise) {
+      console.log('[TokenRefresh] Already refreshing, queuing request...');
+      return this.refreshPromise;
     }
 
     const { refreshToken, setAuth, clearAuth } = useAuthStore.getState();
@@ -97,86 +55,95 @@ class TokenRefreshService {
 
     this.isRefreshing = true;
 
-    try {
-      console.log('[TokenRefresh] Refreshing tokens...');
-      const response = await apiService.refreshToken(refreshToken);
+    // Create a new refresh promise that all concurrent requests will share
+    this.refreshPromise = (async () => {
+      try {
+        console.log('[TokenRefresh] Refreshing tokens...');
+        
+        // Direct fetch to avoid circular dependency with apiService
+        const baseUrl = this.getBaseUrl();
+        const response = await fetch(`${baseUrl}/api/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
 
-      // Update store with new tokens
-      setAuth(response.user, response.accessToken, response.refreshToken);
+        if (!response.ok) {
+          throw new Error('Refresh token expired or invalid');
+        }
 
-      // Update expiry
-      this.setTokenExpiry(response.expiresAt);
+        const data = await response.json();
+        
+        // Update store with new tokens
+        setAuth(data.user, data.accessToken, data.refreshToken);
 
-      console.log('[TokenRefresh] Tokens refreshed successfully');
-      return true;
-    } catch (error) {
-      console.error('[TokenRefresh] Failed to refresh tokens:', error);
+        console.log('[TokenRefresh] Tokens refreshed successfully');
+        
+        // Resolve all queued requests
+        this.pendingRequests.forEach(({ resolve }) => resolve(true));
+        this.pendingRequests = [];
+        
+        return true;
+      } catch (error) {
+        console.error('[TokenRefresh] Failed to refresh tokens:', error);
 
-      // If refresh fails (e.g., token revoked), clear auth
-      if (error instanceof Error && error.message.includes('invalid')) {
-        console.log('[TokenRefresh] Refresh token invalid, clearing auth');
+        // Clear auth on refresh failure
+        console.log('[TokenRefresh] Refresh failed, clearing auth');
         clearAuth();
-        this.stop();
-      }
+        
+        // Reject all queued requests
+        this.pendingRequests.forEach(({ reject }) => 
+          reject(new Error('Token refresh failed'))
+        );
+        this.pendingRequests = [];
 
-      return false;
-    } finally {
-      this.isRefreshing = false;
-    }
+        return false;
+      } finally {
+        this.isRefreshing = false;
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
   }
 
   /**
-   * Extract expiry time from JWT token
+   * Get base URL for API calls
    */
-  private getExpiryFromToken(token: string): number | null {
-    try {
-      const parts = token.split('.');
-      if (parts.length !== 3) {
-        return null;
-      }
+  private getBaseUrl(): string {
+    if (typeof window === 'undefined') return 'http://localhost:8080';
+    
+    const envUrl = import.meta.env.VITE_API_URL;
+    if (envUrl) return envUrl;
 
-      const payload = JSON.parse(atob(parts[1]));
-      if (payload.exp) {
-        return payload.exp * 1000; // Convert to milliseconds
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
+    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+    const host = window.location.hostname;
+    return `${protocol}//${host}:8080`;
   }
 
   /**
-   * Force an immediate token refresh
-   */
-  async forceRefresh(): Promise<boolean> {
-    return this.refreshTokens();
-  }
-
-  /**
-   * Get time until token expires (in milliseconds)
-   */
-  getTimeUntilExpiry(): number | null {
-    if (!this.tokenExpiresAt) {
-      const { accessToken } = useAuthStore.getState();
-      if (accessToken) {
-        this.tokenExpiresAt = this.getExpiryFromToken(accessToken);
-      }
-    }
-
-    if (!this.tokenExpiresAt) {
-      return null;
-    }
-
-    return Math.max(0, this.tokenExpiresAt - Date.now());
-  }
-
-  /**
-   * Check if token is expired
+   * Check if current access token is expired (client-side check)
+   * Used to proactively refresh before making requests
    */
   isTokenExpired(): boolean {
-    const timeUntilExpiry = this.getTimeUntilExpiry();
-    return timeUntilExpiry !== null && timeUntilExpiry <= 0;
+    const { accessToken } = useAuthStore.getState();
+    if (!accessToken) return true;
+
+    try {
+      const parts = accessToken.split('.');
+      if (parts.length !== 3) return true;
+
+      const payload = JSON.parse(atob(parts[1]));
+      if (!payload.exp) return false; // No expiry claim
+
+      const expiryMs = payload.exp * 1000;
+      const now = Date.now();
+      
+      // Consider expired if within 30 seconds of expiry (buffer)
+      return expiryMs - now < 30000;
+    } catch {
+      return true; // Invalid token format
+    }
   }
 }
 

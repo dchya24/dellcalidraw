@@ -23,7 +23,8 @@ class ApiService {
 
   private async request<T>(
     path: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryOn401 = true
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
@@ -40,6 +41,24 @@ class ApiService {
       ...options,
       headers,
     });
+
+    // Handle 401 Unauthorized - trigger token refresh
+    if (response.status === 401 && retryOn401 && path !== '/api/auth/refresh') {
+      console.log('[ApiService] 401 Unauthorized, attempting token refresh...');
+      
+      // Dynamic import to avoid circular dependency
+      const { tokenRefreshService } = await import('./tokenRefreshService');
+      const refreshSuccess = await tokenRefreshService.refreshTokens();
+      
+      if (refreshSuccess) {
+        console.log('[ApiService] Token refreshed, retrying request...');
+        // Retry the request once with new token (retryOn401 = false to prevent infinite loop)
+        return this.request<T>(path, options, false);
+      } else {
+        console.log('[ApiService] Token refresh failed, request aborted');
+        throw new AuthError('Session expired', 'token_expired', 401);
+      }
+    }
 
     if (!response.ok) {
       let error: ApiError;

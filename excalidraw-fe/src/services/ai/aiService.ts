@@ -122,11 +122,14 @@ export async function sendChatMessage(options: ChatOptions): Promise<void> {
     console.log("[AI Service] Window location:", window.location.href);
     console.log("[AI Service] Request starting at:", Date.now());
 
+    // Get headers with auto-refresh check
+    const authHeaders = await getAuthHeadersWithRefresh();
+
     const response = await fetch(fullUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...getAuthHeaders(),
+        ...authHeaders,
       },
       body: JSON.stringify({
         message,
@@ -262,8 +265,10 @@ export async function listModels(): Promise<string[]> {
   const baseUrl = getBaseUrl();
 
   try {
+    const authHeaders = await getAuthHeadersWithRefresh();
+    
     const response = await fetch(`${baseUrl}/api/ai/models`, {
-      headers: getAuthHeaders(),
+      headers: authHeaders,
     });
 
     if (!response.ok) return [];
@@ -281,8 +286,10 @@ export async function getActiveModel(): Promise<string> {
   const baseUrl = getBaseUrl();
 
   try {
+    const authHeaders = await getAuthHeadersWithRefresh();
+    
     const response = await fetch(`${baseUrl}/api/ai/health`, {
-      headers: getAuthHeaders(),
+      headers: authHeaders,
     });
 
     if (!response.ok) return "";
@@ -294,17 +301,37 @@ export async function getActiveModel(): Promise<string> {
   }
 }
 
-// ─── Helper: get auth headers ─────────────────────────────────────────────────
+// ─── Helper: get auth headers with auto-refresh support ──────────────────────
 
-function getAuthHeaders(): Record<string, string> {
+async function getAuthHeadersWithRefresh(): Promise<Record<string, string>> {
   try {
     const raw = localStorage.getItem("auth-storage");
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     const token = parsed?.state?.accessToken;
     if (!token) return {};
+
+    // Check if token is expired
+    const { tokenRefreshService } = await import('../tokenRefreshService');
+    if (tokenRefreshService.isTokenExpired()) {
+      console.log('[AI Service] Token expired, refreshing before request...');
+      await tokenRefreshService.refreshTokens();
+      
+      // Get fresh token after refresh
+      const refreshedRaw = localStorage.getItem("auth-storage");
+      if (refreshedRaw) {
+        const refreshedParsed = JSON.parse(refreshedRaw);
+        const refreshedToken = refreshedParsed?.state?.accessToken;
+        if (refreshedToken) {
+          return { Authorization: `Bearer ${refreshedToken}` };
+        }
+      }
+    }
+
     return { Authorization: `Bearer ${token}` };
   } catch {
     return {};
   }
 }
+
+// Removed: getAuthHeaders() - replaced by getAuthHeadersWithRefresh()

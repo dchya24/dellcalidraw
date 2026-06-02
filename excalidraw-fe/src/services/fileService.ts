@@ -38,7 +38,8 @@ class FileService {
 
   private async request<T>(
     path: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryOn401 = true
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
@@ -55,6 +56,22 @@ class FileService {
       ...options,
       headers,
     });
+
+    // Handle 401 Unauthorized - trigger token refresh
+    if (response.status === 401 && retryOn401) {
+      console.log('[FileService] 401 Unauthorized, attempting token refresh...');
+      
+      const { tokenRefreshService } = await import('./tokenRefreshService');
+      const refreshSuccess = await tokenRefreshService.refreshTokens();
+      
+      if (refreshSuccess) {
+        console.log('[FileService] Token refreshed, retrying request...');
+        return this.request<T>(path, options, false);
+      } else {
+        console.log('[FileService] Token refresh failed, request aborted');
+        throw new Error('Session expired');
+      }
+    }
 
     if (!response.ok) {
       let error: ApiError;

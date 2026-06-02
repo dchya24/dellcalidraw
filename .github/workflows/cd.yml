@@ -118,7 +118,9 @@ jobs:
           echo "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          scp -P "$VPS_PORT" docker-compose.yml "${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/docker-compose.yml"
+          # Resolve $HOME on the VPS so the secret can use ~/ or $HOME/ paths
+          RESOLVED_PATH=$(ssh -p "$VPS_PORT" "${VPS_USER}@${VPS_HOST}" "echo $DEPLOY_PATH")
+          scp -P "$VPS_PORT" docker-compose.yml "${VPS_USER}@${VPS_HOST}:${RESOLVED_PATH}/docker-compose.yml"
 
       - name: Sync .env from GitHub Secrets and deploy
         uses: appleboy/ssh-action@v1.0.3

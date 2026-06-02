@@ -52,31 +52,39 @@ function App() {
   //   - logged in           -> mirror `user.username`
   //   - logged-in -> guest  -> wipe stored guest name and generate a fresh one
   //   - guest (steady state) -> reuse the saved guest name
-  const prevAuthRef = useRef(isAuthenticated);
-  useEffect(() => {
-    const wasAuthenticated = prevAuthRef.current;
-    prevAuthRef.current = isAuthenticated;
+  //
+  // We track the previously-synced auth state via `useState` (not
+  // `useRef`) and adjust `username` during render — this is the
+  // pattern recommended by React when state needs to react to prop
+  // changes. See:
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  //
+  // The `Math.random()` call for the fresh guest name is unavoidable
+  // (the value must differ across logouts), so the purity rule is
+  // disabled for that one expression.
+  const [lastSyncedUserId, setLastSyncedUserId] = useState<string | undefined>(user?.id);
+  const [lastSyncedIsAuth, setLastSyncedIsAuth] = useState(isAuthenticated);
+  if (lastSyncedUserId !== user?.id || lastSyncedIsAuth !== isAuthenticated) {
+    const wasAuth = lastSyncedIsAuth;
+    setLastSyncedUserId(user?.id);
+    setLastSyncedIsAuth(isAuthenticated);
 
     if (user?.username) {
       if (username !== user.username) setUsername(user.username);
-      return;
-    }
-
-    if (wasAuthenticated && !isAuthenticated) {
+    } else if (wasAuth && !isAuthenticated) {
       // Auto-logout (or manual logout) just happened. Drop the previous
       // identity and start a clean guest session.
+      // eslint-disable-next-line react-hooks/purity
       const fresh = `User_${Math.random().toString(36).substring(2, 8)}`;
-      localStorage.setItem("username", fresh);
       setUsername(fresh);
-      return;
     }
+    // Steady-state guest: keep current username
+  }
 
-    // Steady-state guest: reuse whatever name is saved.
-    const saved = localStorage.getItem("username");
-    if (saved && saved !== username) {
-      setUsername(saved);
-    }
-  }, [user, isAuthenticated, username]);
+  // Persist username to localStorage whenever it changes.
+  useEffect(() => {
+    localStorage.setItem("username", username);
+  }, [username]);
 
   // Start/stop token refresh service based on auth state
   // Proactively refresh token on page load if expired

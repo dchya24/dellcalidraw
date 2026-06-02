@@ -21,7 +21,6 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { ChatMessage, ToolCall, TokenUsage } from "../../types/ai";
 
 // Type alias - convertToExcalidrawElements accepts this skeleton format
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ExcalidrawElementSkeleton = Parameters<typeof convertToExcalidrawElements>[0] extends (infer T)[] | null ? T : never;
 
 interface AIChatPanelProps {
@@ -85,19 +84,19 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
     }
   }, [panelSize]);
 
-  // Initialize conversation when tab changes
-  useEffect(() => {
-    const activeFileFromEffect = getActiveFile();
-    if (!activeFileFromEffect) {
-      return;
-    }
-
-    const tabId = activeFileFromEffect.activeTabId;
-    if (tabId !== currentTabId) {
-      setCurrentTabId(tabId);
-      initConversation(tabId);
-    }
-  }, [getActiveFile, currentTabId, initConversation]);
+  // Initialize conversation when the active tab changes. We adjust
+  // state during render (tracked by `lastInitializedTabId`) instead of
+  // inside useEffect, so the `react-hooks/set-state-in-effect` rule
+  // doesn't fire. See:
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const activeFile = getActiveFile();
+  const nextTabId = activeFile?.activeTabId ?? null;
+  const [lastInitializedTabId, setLastInitializedTabId] = useState<string | null>(null);
+  if (nextTabId && nextTabId !== currentTabId && nextTabId !== lastInitializedTabId) {
+    setLastInitializedTabId(nextTabId);
+    setCurrentTabId(nextTabId);
+    initConversation(nextTabId);
+  }
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -312,7 +311,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
             }
 
             // Handle create tools — add to canvas immediately
-            const { skeleton, bindings } = generateSkeletonFromTool(toolName, args, excalidrawAPI);
+            const { skeleton, bindings } = generateSkeletonFromTool(toolName, args);
             console.log(`[AIChatPanel] Tool: ${toolName}`, { args, skeleton, bindings });
             if (skeleton) {
               try {
@@ -321,7 +320,15 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
                   [skeleton],
                   { regenerateIds: false }
                 );
-                console.log(`[AIChatPanel] Converted ${converted.length} elements:`, converted.map(e => ({ id: e.id, type: e.type, x: e.x, y: e.y, width: e.width, height: e.height, points: (e as any).points })));
+                console.log(`[AIChatPanel] Converted ${converted.length} elements:`, converted.map((e) => ({
+                  id: e.id,
+                  type: e.type,
+                  x: e.x,
+                  y: e.y,
+                  width: e.width,
+                  height: e.height,
+                  points: (e as { points?: readonly unknown[] }).points,
+                })));
                 if (converted.length > 0) {
                   // Track created element IDs for undo support
                   for (const ce of converted) {
@@ -950,7 +957,6 @@ interface SkeletonResult {
 function generateSkeletonFromTool(
   toolName: string,
   args: Record<string, unknown>,
-  _excalidrawAPI: ExcalidrawImperativeAPI
 ): SkeletonResult {
   const id = crypto.randomUUID();
 
@@ -1310,16 +1316,28 @@ function applyEditText(
     return el;
   });
 
-  // Also update bound text elements for labeled shapes
+  // Also update bound text elements for labeled shapes.
+  // `ExcalidrawElement` is a union type — we cast to access
+  // element-specific fields (text, boundElements, fontSize) that
+  // aren't on the base type. The casts are necessary because
+  // @excalidraw/excalidraw doesn't re-export `ExcalidrawElement`
+  // from its public types entry.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const targetEl = elements.find((e: any) => e.id === elementId);
-  if (targetEl && (targetEl as any).type !== "text") {
-    const boundElements = (targetEl as any).boundElements as Array<{ id: string; type: string }> | undefined;
+  if (
+    targetEl &&
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (targetEl as any).type !== "text"
+  ) {
+    const boundElements =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (targetEl as any).boundElements as Array<{ id: string; type: string }> | undefined;
     if (boundElements && (args.text !== undefined || args.fontSize !== undefined)) {
       for (const bound of boundElements) {
         if (bound.type === "text") {
           const textIdx = updated.findIndex((e) => e.id === bound.id);
           if (textIdx !== -1) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const textEl = { ...updated[textIdx] } as any;
             if (args.text !== undefined) textEl.text = String(args.text);
             if (args.fontSize !== undefined) textEl.fontSize = Number(args.fontSize);

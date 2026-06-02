@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { getRoomIdFromURL, clearRoomIdFromURL } from "../utils/roomURL";
 import { roomService } from "../services/roomService";
 import { useThemeStore } from "../store/useThemeStore";
@@ -10,19 +10,10 @@ interface RoomInviteDialogProps {
 
 export default function RoomInviteDialog({ username, onJoined }: RoomInviteDialogProps) {
   const { theme } = useThemeStore();
-  const [isOpen, setIsOpen] = useState(false);
-  const [roomId, setRoomId] = useState<string | null>(null);
+  const [roomId] = useState<string | null>(() => getRoomIdFromURL());
+  const [isOpen, setIsOpen] = useState<boolean>(() => !!getRoomIdFromURL());
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Check for room in URL on mount
-  useEffect(() => {
-    const roomFromURL = getRoomIdFromURL();
-    if (roomFromURL) {
-      setRoomId(roomFromURL);
-      setIsOpen(true);
-    }
-  }, []);
 
   const handleJoin = async () => {
     if (!roomId) return;

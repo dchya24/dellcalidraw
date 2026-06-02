@@ -105,10 +105,18 @@ export default function Sidebar({ isOpen, onClose, excalidrawAPI }: SidebarProps
     return result;
   }, [files, searchQuery, sortBy]);
 
+  // `now` is captured in state and ticked every minute so formatDate
+  // stays a pure function (no Date.now() during render — which trips
+  // `react-hooks/purity`).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
   if (!isOpen) return null;
 
   const formatDate = (timestamp: number) => {
-    const now = Date.now();
     const diff = now - timestamp;
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);

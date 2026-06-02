@@ -10,26 +10,26 @@ import (
 
 // AIRequestLog represents a logged AI API request
 type AIRequestLog struct {
-	ID                int64           `json:"id"`
-	CreatedAt         time.Time       `json:"created_at"`
-	RequestID         string          `json:"request_id"`
-	Model             string          `json:"model"`
-	Provider          string          `json:"provider"`
-	UserMessage       string          `json:"user_message"`
-	SystemPrompt      string          `json:"system_prompt,omitempty"`
-	CanvasElementCount int            `json:"canvas_element_count"`
-	ToolsCount        int             `json:"tools_count"`
-	ResponseText      string          `json:"response_text,omitempty"`
-	ToolCalls         json.RawMessage `json:"tool_calls,omitempty"`
-	FinishReason      string          `json:"finish_reason,omitempty"`
-	RequestDurationMs int             `json:"request_duration_ms,omitempty"`
-	PromptTokens      int             `json:"prompt_tokens,omitempty"`
-	CompletionTokens  int             `json:"completion_tokens,omitempty"`
-	TotalTokens       int             `json:"total_tokens,omitempty"`
-	Status            string          `json:"status"`
-	ErrorMessage      string          `json:"error_message,omitempty"`
-	ClientIP          string          `json:"client_ip,omitempty"`
-	UserAgent         string          `json:"user_agent,omitempty"`
+	ID                 int64           `json:"id"`
+	CreatedAt          time.Time       `json:"created_at"`
+	RequestID          string          `json:"request_id"`
+	Model              string          `json:"model"`
+	Provider           string          `json:"provider"`
+	UserMessage        string          `json:"user_message"`
+	SystemPrompt       string          `json:"system_prompt,omitempty"`
+	CanvasElementCount int             `json:"canvas_element_count"`
+	ToolsCount         int             `json:"tools_count"`
+	ResponseText       string          `json:"response_text,omitempty"`
+	ToolCalls          json.RawMessage `json:"tool_calls,omitempty"`
+	FinishReason       string          `json:"finish_reason,omitempty"`
+	RequestDurationMs  int             `json:"request_duration_ms,omitempty"`
+	PromptTokens       int             `json:"prompt_tokens,omitempty"`
+	CompletionTokens   int             `json:"completion_tokens,omitempty"`
+	TotalTokens        int             `json:"total_tokens,omitempty"`
+	Status             string          `json:"status"`
+	ErrorMessage       string          `json:"error_message,omitempty"`
+	ClientIP           string          `json:"client_ip,omitempty"`
+	UserAgent          string          `json:"user_agent,omitempty"`
 }
 
 // AIRequestLogRepository handles persistence of AI request logs
@@ -196,12 +196,12 @@ func (r *AIRequestLogRepository) GetStats() (map[string]interface{}, error) {
 	}
 
 	return map[string]interface{}{
-		"total_requests_24h":        total,
-		"successful_requests_24h":   successful,
-		"error_requests_24h":        errors,
-		"avg_duration_ms_24h":       avgDuration,
-		"total_tokens_24h":          totalTokens,
-		"prompt_tokens_24h":         promptTokens,
-		"completion_tokens_24h":     completionTokens,
+		"total_requests_24h":      total,
+		"successful_requests_24h": successful,
+		"error_requests_24h":      errors,
+		"avg_duration_ms_24h":     avgDuration,
+		"total_tokens_24h":        totalTokens,
+		"prompt_tokens_24h":       promptTokens,
+		"completion_tokens_24h":   completionTokens,
 	}, nil
 }

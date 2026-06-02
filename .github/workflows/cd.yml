@@ -103,7 +103,7 @@ jobs:
       group: vps-deploy
       cancel-in-progress: false
     steps:
-      - name: Pull latest images and restart on VPS
+      - name: Sync .env from GitHub Secrets and deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -111,10 +111,62 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           script_stop: true
-          envs: GHCR_USER,GHCR_TOKEN,DEPLOY_PATH
+          envs: GHCR_USER,GHCR_TOKEN,DEPLOY_PATH,BACKEND_IMAGE,FRONTEND_IMAGE,BACKEND_PORT,FRONTEND_PORT,APP_ENV,DB_HOST,DB_PORT,DB_USER,DB_PASSWORD,DB_NAME,DB_SSLMODE,STORAGE_ENDPOINT,STORAGE_ACCESS_KEY,STORAGE_SECRET_KEY,STORAGE_BUCKET,STORAGE_REGION,STORAGE_USE_SSL,WEBSOCKET_ENCRYPTION_ENABLED,EMAIL_PROVIDER,EMAIL_FROM,EMAIL_BASE_URL,EMAIL_SMTP_HOST,EMAIL_SMTP_PORT,EMAIL_SMTP_USERNAME,EMAIL_SMTP_PASSWORD,EMAIL_SMTP_STARTTLS,BACKUP_GPG_PASSPHRASE,BACKUP_CRON,BACKUP_RETENTION_DAYS,BACKUP_S3_PREFIX,BACKUP_RUN_ON_START,TZ
           script: |
             set -euo pipefail
             cd "$DEPLOY_PATH"
+
+            # Render .env from GitHub Secrets
+            cat > .env <<EOF
+            # ---------- Image tags ----------
+            BACKEND_IMAGE=${BACKEND_IMAGE}
+            FRONTEND_IMAGE=${FRONTEND_IMAGE}
+
+            # ---------- Host port bindings ----------
+            BACKEND_PORT=${BACKEND_PORT}
+            FRONTEND_PORT=${FRONTEND_PORT}
+
+            # ---------- App ----------
+            APP_ENV=${APP_ENV}
+
+            # ---------- Database (PostgreSQL) ----------
+            EXCALIDRAW_DATABASE_HOST=${DB_HOST}
+            EXCALIDRAW_DATABASE_PORT=${DB_PORT}
+            EXCALIDRAW_DATABASE_USER=${DB_USER}
+            EXCALIDRAW_DATABASE_PASSWORD=${DB_PASSWORD}
+            EXCALIDRAW_DATABASE_DBNAME=${DB_NAME}
+            EXCALIDRAW_DATABASE_SSLMODE=${DB_SSLMODE}
+
+            # ---------- Object storage (S3-compatible) ----------
+            EXCALIDRAW_STORAGE_ENDPOINT=${STORAGE_ENDPOINT}
+            EXCALIDRAW_STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY}
+            EXCALIDRAW_STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY}
+            EXCALIDRAW_STORAGE_BUCKET=${STORAGE_BUCKET}
+            EXCALIDRAW_STORAGE_REGION=${STORAGE_REGION}
+            EXCALIDRAW_STORAGE_USE_SSL=${STORAGE_USE_SSL}
+
+            # ---------- WebSocket encryption ----------
+            EXCALIDRAW_WEBSOCKET_ENCRYPTION_ENABLED=${WEBSOCKET_ENCRYPTION_ENABLED}
+
+            # ---------- Email delivery ----------
+            EXCALIDRAW_EMAIL_PROVIDER=${EMAIL_PROVIDER}
+            EXCALIDRAW_EMAIL_FROM=${EMAIL_FROM}
+            EXCALIDRAW_EMAIL_BASE_URL=${EMAIL_BASE_URL}
+            EXCALIDRAW_EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST}
+            EXCALIDRAW_EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT}
+            EXCALIDRAW_EMAIL_SMTP_USERNAME=${EMAIL_SMTP_USERNAME}
+            EXCALIDRAW_EMAIL_SMTP_PASSWORD=${EMAIL_SMTP_PASSWORD}
+            EXCALIDRAW_EMAIL_SMTP_STARTTLS=${EMAIL_SMTP_STARTTLS}
+
+            # ---------- Backup service ----------
+            BACKUP_GPG_PASSPHRASE=${BACKUP_GPG_PASSPHRASE}
+            BACKUP_CRON=${BACKUP_CRON}
+            BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS}
+            BACKUP_S3_PREFIX=${BACKUP_S3_PREFIX}
+            BACKUP_RUN_ON_START=${BACKUP_RUN_ON_START}
+            TZ=${TZ}
+            EOF
+            chmod 600 .env
 
             # Authenticate to GHCR (only needed if the package is private).
             # GHCR_TOKEN is a PAT/classic with at least `read:packages`.
@@ -135,6 +187,46 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
           DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          # Image tags
+          BACKEND_IMAGE: ${{ secrets.BACKEND_IMAGE }}
+          FRONTEND_IMAGE: ${{ secrets.FRONTEND_IMAGE }}
+          # Ports
+          BACKEND_PORT: ${{ secrets.BACKEND_PORT }}
+          FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
+          # App config
+          APP_ENV: ${{ secrets.APP_ENV }}
+          # Database
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SSLMODE: ${{ secrets.DB_SSLMODE }}
+          # Storage
+          STORAGE_ENDPOINT: ${{ secrets.STORAGE_ENDPOINT }}
+          STORAGE_ACCESS_KEY: ${{ secrets.STORAGE_ACCESS_KEY }}
+          STORAGE_SECRET_KEY: ${{ secrets.STORAGE_SECRET_KEY }}
+          STORAGE_BUCKET: ${{ secrets.STORAGE_BUCKET }}
+          STORAGE_REGION: ${{ secrets.STORAGE_REGION }}
+          STORAGE_USE_SSL: ${{ secrets.STORAGE_USE_SSL }}
+          # WebSocket
+          WEBSOCKET_ENCRYPTION_ENABLED: ${{ secrets.WEBSOCKET_ENCRYPTION_ENABLED }}
+          # Email
+          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_BASE_URL: ${{ secrets.EMAIL_BASE_URL }}
+          EMAIL_SMTP_HOST: ${{ secrets.EMAIL_SMTP_HOST }}
+          EMAIL_SMTP_PORT: ${{ secrets.EMAIL_SMTP_PORT }}
+          EMAIL_SMTP_USERNAME: ${{ secrets.EMAIL_SMTP_USERNAME }}
+          EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
+          EMAIL_SMTP_STARTTLS: ${{ secrets.EMAIL_SMTP_STARTTLS }}
+          # Backup
+          BACKUP_GPG_PASSPHRASE: ${{ secrets.BACKUP_GPG_PASSPHRASE }}
+          BACKUP_CRON: ${{ secrets.BACKUP_CRON }}
+          BACKUP_RETENTION_DAYS: ${{ secrets.BACKUP_RETENTION_DAYS }}
+          BACKUP_S3_PREFIX: ${{ secrets.BACKUP_S3_PREFIX }}
+          BACKUP_RUN_ON_START: ${{ secrets.BACKUP_RUN_ON_START }}
+          TZ: ${{ secrets.TZ }}
 
       - name: Deployment summary
         run: |

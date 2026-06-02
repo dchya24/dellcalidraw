@@ -66,7 +66,6 @@ func (s *AuthService) GenerateTokenPair(userID, username, email string) (*TokenP
 		},
 	}
 
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	accessToken, err := token.SignedString(s.secretKey)
 	if err != nil {

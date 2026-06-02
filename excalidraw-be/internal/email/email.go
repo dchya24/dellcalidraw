@@ -3,11 +3,11 @@
 // The package exposes a Sender interface so the application can swap
 // implementations based on EMAIL_PROVIDER:
 //
-//   "log"   — write the message to slog. Dev fallback. Default when
-//             nothing is configured.
-//   "smtp"  — net/smtp with PLAIN auth + STARTTLS. Works against any
-//             standards-compliant relay (Gmail, Postmark, SES SMTP,
-//             Mailgun, self-hosted, etc.).
+//	"log"   — write the message to slog. Dev fallback. Default when
+//	          nothing is configured.
+//	"smtp"  — net/smtp with PLAIN auth + STARTTLS. Works against any
+//	          standards-compliant relay (Gmail, Postmark, SES SMTP,
+//	          Mailgun, self-hosted, etc.).
 //
 // Templates live in templates.go and are kept inline + small. Bigger
 // HTML payloads belong in `embed.FS` once we have more than two
@@ -22,9 +22,9 @@ import (
 // Message describes an outbound email. PlainText is required (RFC
 // fallback for clients that don't render HTML); HTML is optional.
 type Message struct {
-	To       string
-	Subject  string
-	HTML     string
+	To        string
+	Subject   string
+	HTML      string
 	PlainText string
 }
 

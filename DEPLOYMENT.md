@@ -105,34 +105,45 @@ The repository includes automated CI/CD pipelines:
 On the VPS, as the deploy user:
 
 1. Install Docker + Compose plugin.
-2. Clone the repo (or copy just `docker-compose.yml` + `.env`):
+2. Clone the repo (or copy just `docker-compose.yml`):
    ```bash
    git clone <repo-url> /srv/dellcalidraw
    cd /srv/dellcalidraw
-   cp .env.example .env
-   # fill in DB / storage credentials and the GHCR-prefixed image tags:
-   #   BACKEND_IMAGE=ghcr.io/<owner>/<repo>/excalidraw-be:latest
-   #   FRONTEND_IMAGE=ghcr.io/<owner>/<repo>/excalidraw-fe:latest
    ```
 3. (Private packages only) `docker login ghcr.io` once with a PAT that has
    `read:packages`.
-4. Confirm a baseline deploy works manually:
-   ```bash
-   docker compose pull && docker compose up -d
-   ```
+4. **That's it!** The CD pipeline will automatically create `.env` from GitHub Secrets on the first deploy.
+
+**Note:** You no longer need to manually create or edit `.env` on the VPS. The CD pipeline renders it from GitHub Secrets on every deployment.
 
 #### GitHub repository secrets
 
-Add these under *Settings → Secrets and variables → Actions*:
+The CD pipeline now **automatically renders `.env` on the VPS from GitHub Secrets** — you no longer need to SSH into the VPS to update environment variables. 
 
-| Secret              | Purpose                                                |
-|---------------------|--------------------------------------------------------|
-| `VPS_HOST`          | Hostname or IP of the VPS                              |
-| `VPS_USER`          | SSH user (e.g. `deploy`)                               |
-| `VPS_SSH_KEY`       | Private key (PEM) for that user. Public key in `~/.ssh/authorized_keys` on the VPS. |
-| `VPS_PORT`          | SSH port (e.g. `22`)                                   |
-| `VPS_DEPLOY_PATH`   | Absolute path on the VPS that contains `docker-compose.yml` and `.env` (e.g. `/srv/dellcalidraw`) |
-| `GHCR_PULL_TOKEN`   | (private packages only) PAT with `read:packages` so the VPS can pull. Leave unset if the package is public. |
+Add secrets under *Settings → Secrets and variables → Actions*. See the complete list and setup guide in **[docs/GITHUB_SECRETS.md](docs/GITHUB_SECRETS.md)**.
+
+**Minimal required secrets:**
+
+**VPS Connection:**
+- `VPS_HOST` — Hostname or IP of the VPS
+- `VPS_USER` — SSH user (e.g. `deploy`)
+- `VPS_SSH_KEY` — Private key (PEM) for that user
+- `VPS_PORT` — SSH port (e.g. `22`)
+- `VPS_DEPLOY_PATH` — Path containing `docker-compose.yml` (e.g. `/srv/dellcalidraw`)
+- `GHCR_PULL_TOKEN` — (private packages only) PAT with `read:packages`
+
+**Application:**
+- `BACKEND_IMAGE` — e.g. `ghcr.io/<owner>/<repo>/excalidraw-be:latest`
+- `FRONTEND_IMAGE` — e.g. `ghcr.io/<owner>/<repo>/excalidraw-fe:latest`
+- `BACKEND_PORT`, `FRONTEND_PORT`, `APP_ENV`
+
+**Database:**
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSLMODE`
+
+**Storage:**
+- `STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET`, `STORAGE_REGION`, `STORAGE_USE_SSL`
+
+**Optional:** Email, WebSocket, Backup configuration (see [docs/GITHUB_SECRETS.md](docs/GITHUB_SECRETS.md))
 
 Generate the SSH keypair locally, install the public half on the VPS, and
 paste the **private** half into `VPS_SSH_KEY`:
@@ -140,12 +151,38 @@ paste the **private** half into `VPS_SSH_KEY`:
 ```bash
 ssh-keygen -t ed25519 -f deploy_key -N ""
 ssh-copy-id -i deploy_key.pub -p <port> deploy@<vps>
-# then `pbcopy < deploy_key` (or just open the file) and store as VPS_SSH_KEY
+# then `cat deploy_key` and paste the entire output as VPS_SSH_KEY secret
 ```
 
-Once the secrets are in place, every push to `main` will publish images and
-deploy them to the VPS. The `concurrency: vps-deploy` group serializes
-deploys so two simultaneous main pushes won't fight over the host.
+**Quick setup with GitHub CLI:**
+
+```bash
+# VPS connection
+gh secret set VPS_HOST -b "your-vps-ip"
+gh secret set VPS_USER -b "deploy"
+gh secret set VPS_SSH_KEY < deploy_key
+gh secret set VPS_PORT -b "22"
+gh secret set VPS_DEPLOY_PATH -b "/srv/dellcalidraw"
+
+# Images
+gh secret set BACKEND_IMAGE -b "ghcr.io/<owner>/<repo>/excalidraw-be:latest"
+gh secret set FRONTEND_IMAGE -b "ghcr.io/<owner>/<repo>/excalidraw-fe:latest"
+
+# Database (example)
+gh secret set DB_HOST -b "your-db-host"
+gh secret set DB_PASSWORD -b "your-secure-password"
+# ... (see docs/GITHUB_SECRETS.md for complete list)
+```
+
+Once the secrets are in place, every push to `main` will:
+1. Build and push Docker images to GHCR
+2. SSH into the VPS
+3. Render `.env` from GitHub Secrets
+4. Pull latest images and restart containers
+
+**To update configuration:** Just update the secret in GitHub UI and push to `main`. No VPS SSH needed!
+
+The `concurrency: vps-deploy` group serializes deploys so two simultaneous main pushes won't fight over the host.
 
 ### Manual Docker Build and Push
 

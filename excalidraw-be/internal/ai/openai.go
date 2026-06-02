@@ -43,13 +43,13 @@ func NewOpenAIProvider(apiKey, baseURL, model string, maxTokens int, temperature
 
 // OpenAI request/response types
 type openAIRequest struct {
-	Model         string              `json:"model"`
-	Messages      []openAIMessage     `json:"messages"`
-	Tools         []openAITool        `json:"tools,omitempty"`
-	ToolChoice    any                 `json:"tool_choice,omitempty"`
-	MaxTokens     int                 `json:"max_tokens,omitempty"`
-	Temperature   float64             `json:"temperature,omitempty"`
-	Stream        bool                `json:"stream,omitempty"`
+	Model         string               `json:"model"`
+	Messages      []openAIMessage      `json:"messages"`
+	Tools         []openAITool         `json:"tools,omitempty"`
+	ToolChoice    any                  `json:"tool_choice,omitempty"`
+	MaxTokens     int                  `json:"max_tokens,omitempty"`
+	Temperature   float64              `json:"temperature,omitempty"`
+	Stream        bool                 `json:"stream,omitempty"`
 	StreamOptions *openAIStreamOptions `json:"stream_options,omitempty"`
 }
 
@@ -282,7 +282,7 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, too
 				lineBuf = lineBuf[lineEnd+1:]
 				line = strings.TrimSpace(line)
 
-					slog.Info("[AI] Stream line", "line", line)
+				slog.Info("[AI] Stream line", "line", line)
 
 				if !strings.HasPrefix(line, "data: ") {
 					continue

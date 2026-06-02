@@ -124,10 +124,10 @@ func (p *AnthropicProvider) Chat(ctx context.Context, messages []Message, tools 
 
 	var anthropicResp struct {
 		Content []struct {
-			Type  string `json:"type"`
-			Text  string `json:"text,omitempty"`
-			ID    string `json:"id,omitempty"`
-			Name  string `json:"name,omitempty"`
+			Type  string          `json:"type"`
+			Text  string          `json:"text,omitempty"`
+			ID    string          `json:"id,omitempty"`
+			Name  string          `json:"name,omitempty"`
 			Input json.RawMessage `json:"input,omitempty"`
 		} `json:"content"`
 	}

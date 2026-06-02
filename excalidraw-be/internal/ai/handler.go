@@ -24,25 +24,25 @@ type RequestLogger interface {
 // This is a duplicate-free struct that maps to database.AIRequestLog
 // without importing the database package directly
 type RequestLogEntry struct {
-	ID                int64         `json:"id,omitempty"`
-	RequestID         string        `json:"request_id"`
-	Model             string        `json:"model"`
-	Provider          string        `json:"provider"`
-	UserMessage       string        `json:"user_message"`
-	SystemPrompt      string        `json:"system_prompt,omitempty"`
-	CanvasElementCount int          `json:"canvas_element_count"`
-	ToolsCount        int           `json:"tools_count"`
-	ResponseText      string        `json:"response_text,omitempty"`
-	ToolCalls         []ToolCallLog `json:"tool_calls,omitempty"`
-	FinishReason      string        `json:"finish_reason,omitempty"`
-	RequestDurationMs int           `json:"request_duration_ms,omitempty"`
-	PromptTokens      int           `json:"prompt_tokens,omitempty"`
-	CompletionTokens  int           `json:"completion_tokens,omitempty"`
-	TotalTokens       int           `json:"total_tokens,omitempty"`
-	Status            string        `json:"status"`
-	ErrorMessage      string        `json:"error_message,omitempty"`
-	ClientIP          string        `json:"client_ip,omitempty"`
-	UserAgent         string        `json:"user_agent,omitempty"`
+	ID                 int64         `json:"id,omitempty"`
+	RequestID          string        `json:"request_id"`
+	Model              string        `json:"model"`
+	Provider           string        `json:"provider"`
+	UserMessage        string        `json:"user_message"`
+	SystemPrompt       string        `json:"system_prompt,omitempty"`
+	CanvasElementCount int           `json:"canvas_element_count"`
+	ToolsCount         int           `json:"tools_count"`
+	ResponseText       string        `json:"response_text,omitempty"`
+	ToolCalls          []ToolCallLog `json:"tool_calls,omitempty"`
+	FinishReason       string        `json:"finish_reason,omitempty"`
+	RequestDurationMs  int           `json:"request_duration_ms,omitempty"`
+	PromptTokens       int           `json:"prompt_tokens,omitempty"`
+	CompletionTokens   int           `json:"completion_tokens,omitempty"`
+	TotalTokens        int           `json:"total_tokens,omitempty"`
+	Status             string        `json:"status"`
+	ErrorMessage       string        `json:"error_message,omitempty"`
+	ClientIP           string        `json:"client_ip,omitempty"`
+	UserAgent          string        `json:"user_agent,omitempty"`
 }
 
 // ToolCallLog represents a logged tool call (for JSON serialization)
@@ -91,7 +91,7 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
+	w.Header().Set("X-Accel-Buffering", "no")          // Disable nginx buffering
 	w.Header().Set("Access-Control-Allow-Origin", "*") // Allow all origins for SSE
 
 	// Write a 200 OK status so the client sees a successful response
@@ -156,16 +156,16 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	if h.requestLogger != nil {
 		logEntry = &RequestLogEntry{
-			RequestID:         requestID,
-			Model:             model,
-			Provider:          h.providerName,
-			UserMessage:       req.Message,
-			SystemPrompt:      truncate(BuildSystemPrompt(canvasElements), 5000),
+			RequestID:          requestID,
+			Model:              model,
+			Provider:           h.providerName,
+			UserMessage:        req.Message,
+			SystemPrompt:       truncate(BuildSystemPrompt(canvasElements), 5000),
 			CanvasElementCount: len(canvasElements),
-			ToolsCount:        len(h.tools),
-			Status:            "pending",
-			ClientIP:          r.RemoteAddr,
-			UserAgent:         r.UserAgent(),
+			ToolsCount:         len(h.tools),
+			Status:             "pending",
+			ClientIP:           r.RemoteAddr,
+			UserAgent:          r.UserAgent(),
 		}
 		h.requestLogger.LogRequest(logEntry)
 		slog.Info("[AI Log] Request logged", "request_id", requestID, "log_id", logEntry.ID)
@@ -287,8 +287,8 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleModels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"models":       h.provider.GetModels(),
-		"activeModel":  h.provider.DefaultModel(),
+		"models":      h.provider.GetModels(),
+		"activeModel": h.provider.DefaultModel(),
 	})
 }
 

@@ -79,9 +79,9 @@ type AuthConfig struct {
 }
 
 type AIConfig struct {
-	Provider    string  `mapstructure:"provider"`    // openai | anthropic
+	Provider    string  `mapstructure:"provider"` // openai | anthropic
 	APIKey      string  `mapstructure:"api_key"`
-	BaseURL     string  `mapstructure:"base_url"`    // For OpenAI-compatible endpoints
+	BaseURL     string  `mapstructure:"base_url"` // For OpenAI-compatible endpoints
 	Model       string  `mapstructure:"model"`
 	MaxTokens   int     `mapstructure:"max_tokens"`
 	Temperature float64 `mapstructure:"temperature"`

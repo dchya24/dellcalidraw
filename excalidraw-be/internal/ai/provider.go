@@ -273,23 +273,23 @@ func GetDefaultTools() []Tool {
 			}{
 				Type: "object",
 				Properties: map[string]interface{}{
-					"x":               map[string]interface{}{"type": "number", "description": "X position (left edge)"},
-					"y":               map[string]interface{}{"type": "number", "description": "Y position (top edge)"},
-					"width":           map[string]interface{}{"type": "number", "description": "Width of rectangle (min 120)"},
-					"height":          map[string]interface{}{"type": "number", "description": "Height of rectangle (min 60)"},
-					"label":           map[string]interface{}{"type": "object", "description": "Label object with text and fontSize", "properties": map[string]interface{}{
+					"x":      map[string]interface{}{"type": "number", "description": "X position (left edge)"},
+					"y":      map[string]interface{}{"type": "number", "description": "Y position (top edge)"},
+					"width":  map[string]interface{}{"type": "number", "description": "Width of rectangle (min 120)"},
+					"height": map[string]interface{}{"type": "number", "description": "Height of rectangle (min 60)"},
+					"label": map[string]interface{}{"type": "object", "description": "Label object with text and fontSize", "properties": map[string]interface{}{
 						"text":     map[string]interface{}{"type": "string", "description": "Label text"},
 						"fontSize": map[string]interface{}{"type": "number", "description": "Font size (min 16, default 18)"},
 					}},
 					"strokeColor":     map[string]interface{}{"type": "string", "description": "Stroke color (hex, default #1e1e1e)"},
 					"backgroundColor": map[string]interface{}{"type": "string", "description": "Fill color (hex, use pastel colors)"},
 					"fillStyle":       map[string]interface{}{"type": "string", "description": "Fill style: solid, hatching, cross-hatch"},
-					"roundness":       map[string]interface{}{"type": "object", "description": "Roundness for corners", "properties": map[string]interface{}{
+					"roundness": map[string]interface{}{"type": "object", "description": "Roundness for corners", "properties": map[string]interface{}{
 						"type": map[string]interface{}{"type": "number", "description": "Type: 1=sharp, 2=slight, 3=rounded, 4=very rounded"},
 					}},
-					"strokeWidth":     map[string]interface{}{"type": "number", "description": "Stroke width (1-3)"},
-					"roughness":       map[string]interface{}{"type": "number", "description": "Roughness: 0=clean, 1=sketchy, 2=rough"},
-					"opacity":         map[string]interface{}{"type": "number", "description": "Opacity 0-100, use 30-50 for zones"},
+					"strokeWidth": map[string]interface{}{"type": "number", "description": "Stroke width (1-3)"},
+					"roughness":   map[string]interface{}{"type": "number", "description": "Roughness: 0=clean, 1=sketchy, 2=rough"},
+					"opacity":     map[string]interface{}{"type": "number", "description": "Opacity 0-100, use 30-50 for zones"},
 				},
 				Required: []string{"x", "y", "width", "height"},
 			},
@@ -310,7 +310,7 @@ func GetDefaultTools() []Tool {
 					"height":          map[string]interface{}{"type": "number", "description": "Height (min 60)"},
 					"label":           map[string]interface{}{"type": "object", "description": "Label object with text and fontSize"},
 					"strokeColor":     map[string]interface{}{"type": "string", "description": "Stroke color (hex)"},
-					"backgroundColor":  map[string]interface{}{"type": "string", "description": "Fill color (hex)"},
+					"backgroundColor": map[string]interface{}{"type": "string", "description": "Fill color (hex)"},
 					"fillStyle":       map[string]interface{}{"type": "string", "description": "Fill style: solid, hatching, cross-hatch"},
 					"strokeWidth":     map[string]interface{}{"type": "number", "description": "Stroke width (1-3)"},
 					"opacity":         map[string]interface{}{"type": "number", "description": "Opacity 0-100"},
@@ -371,27 +371,27 @@ func GetDefaultTools() []Tool {
 			}{
 				Type: "object",
 				Properties: map[string]interface{}{
-					"startX":       map[string]interface{}{"type": "number", "description": "Start X position (relative to shape or absolute)"},
-					"startY":       map[string]interface{}{"type": "number", "description": "Start Y position"},
-					"endX":         map[string]interface{}{"type": "number", "description": "End X position"},
-					"endY":         map[string]interface{}{"type": "number", "description": "End Y position"},
-					"label":        map[string]interface{}{"type": "object", "description": "Label on arrow", "properties": map[string]interface{}{
+					"startX": map[string]interface{}{"type": "number", "description": "Start X position (relative to shape or absolute)"},
+					"startY": map[string]interface{}{"type": "number", "description": "Start Y position"},
+					"endX":   map[string]interface{}{"type": "number", "description": "End X position"},
+					"endY":   map[string]interface{}{"type": "number", "description": "End Y position"},
+					"label": map[string]interface{}{"type": "object", "description": "Label on arrow", "properties": map[string]interface{}{
 						"text":     map[string]interface{}{"type": "string", "description": "Label text"},
 						"fontSize": map[string]interface{}{"type": "number", "description": "Font size (min 14)"},
 					}},
-					"strokeColor":   map[string]interface{}{"type": "string", "description": "Arrow color (hex)"},
-					"strokeWidth":   map[string]interface{}{"type": "number", "description": "Stroke width (1-3, default 2)"},
+					"strokeColor":    map[string]interface{}{"type": "string", "description": "Arrow color (hex)"},
+					"strokeWidth":    map[string]interface{}{"type": "number", "description": "Stroke width (1-3, default 2)"},
 					"startArrowhead": map[string]interface{}{"type": "string", "description": "Start arrowhead: arrow, bar, dot, triangle, null"},
-					"endArrowhead":  map[string]interface{}{"type": "string", "description": "End arrowhead: arrow, bar, dot, triangle, null (default arrow)"},
-					"startBinding":  map[string]interface{}{"type": "object", "description": "Bind start to element", "properties": map[string]interface{}{
-						"elementId":   map[string]interface{}{"type": "string", "description": "ID of element to bind to"},
-						"fixedPoint":  map[string]interface{}{"type": "array", "description": "[x, y] relative position: [0,0]=top, [1,1]=bottom, [0,0.5]=left-center, [1,0.5]=right-center, [0.5,0.5]=center"},
+					"endArrowhead":   map[string]interface{}{"type": "string", "description": "End arrowhead: arrow, bar, dot, triangle, null (default arrow)"},
+					"startBinding": map[string]interface{}{"type": "object", "description": "Bind start to element", "properties": map[string]interface{}{
+						"elementId":  map[string]interface{}{"type": "string", "description": "ID of element to bind to"},
+						"fixedPoint": map[string]interface{}{"type": "array", "description": "[x, y] relative position: [0,0]=top, [1,1]=bottom, [0,0.5]=left-center, [1,0.5]=right-center, [0.5,0.5]=center"},
 					}},
-					"endBinding":    map[string]interface{}{"type": "object", "description": "Bind end to element", "properties": map[string]interface{}{
-						"elementId":   map[string]interface{}{"type": "string", "description": "ID of element to bind to"},
-						"fixedPoint":  map[string]interface{}{"type": "array", "description": "[x, y] relative position"},
+					"endBinding": map[string]interface{}{"type": "object", "description": "Bind end to element", "properties": map[string]interface{}{
+						"elementId":  map[string]interface{}{"type": "string", "description": "ID of element to bind to"},
+						"fixedPoint": map[string]interface{}{"type": "array", "description": "[x, y] relative position"},
 					}},
-					"strokeStyle":   map[string]interface{}{"type": "string", "description": "Stroke style: solid, dashed, dotted"},
+					"strokeStyle": map[string]interface{}{"type": "string", "description": "Stroke style: solid, dashed, dotted"},
 				},
 				Required: []string{"startX", "startY", "endX", "endY"},
 			},
@@ -406,12 +406,12 @@ func GetDefaultTools() []Tool {
 			}{
 				Type: "object",
 				Properties: map[string]interface{}{
-					"points":        map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "array"}, "description": "Array of [x, y] coordinate arrays [[x1,y1], [x2,y2], ...]"},
-					"strokeColor":   map[string]interface{}{"type": "string", "description": "Line color (hex)"},
-					"strokeWidth":   map[string]interface{}{"type": "number", "description": "Stroke width (1-3)"},
+					"points":         map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "array"}, "description": "Array of [x, y] coordinate arrays [[x1,y1], [x2,y2], ...]"},
+					"strokeColor":    map[string]interface{}{"type": "string", "description": "Line color (hex)"},
+					"strokeWidth":    map[string]interface{}{"type": "number", "description": "Stroke width (1-3)"},
 					"startArrowhead": map[string]interface{}{"type": "string", "description": "Start arrowhead: arrow, bar, dot, triangle, null"},
-					"endArrowhead":  map[string]interface{}{"type": "string", "description": "End arrowhead: arrow, bar, dot, triangle, null"},
-					"strokeStyle":   map[string]interface{}{"type": "string", "description": "Stroke style: solid, dashed, dotted"},
+					"endArrowhead":   map[string]interface{}{"type": "string", "description": "End arrowhead: arrow, bar, dot, triangle, null"},
+					"strokeStyle":    map[string]interface{}{"type": "string", "description": "Stroke style: solid, dashed, dotted"},
 				},
 				Required: []string{"points"},
 			},
@@ -503,9 +503,9 @@ func GetDefaultTools() []Tool {
 			}{
 				Type: "object",
 				Properties: map[string]interface{}{
-					"elementId":  map[string]interface{}{"type": "string", "description": "ID of the text or labeled element to edit"},
-					"text":       map[string]interface{}{"type": "string", "description": "New text content"},
-					"fontSize":   map[string]interface{}{"type": "number", "description": "New font size (min 14)"},
+					"elementId":   map[string]interface{}{"type": "string", "description": "ID of the text or labeled element to edit"},
+					"text":        map[string]interface{}{"type": "string", "description": "New text content"},
+					"fontSize":    map[string]interface{}{"type": "number", "description": "New font size (min 14)"},
 					"strokeColor": map[string]interface{}{"type": "string", "description": "New text color (hex)"},
 				},
 				Required: []string{"elementId"},

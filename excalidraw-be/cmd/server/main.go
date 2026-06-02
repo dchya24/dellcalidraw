@@ -429,24 +429,24 @@ func (a *aiRequestLoggerAdapter) LogRequest(entry *ai.RequestLogEntry) {
 	toolCallsJSON, _ := json.Marshal(entry.ToolCalls)
 
 	dbLog := &database.AIRequestLog{
-		RequestID:         entry.RequestID,
-		Model:             entry.Model,
-		Provider:          entry.Provider,
-		UserMessage:       entry.UserMessage,
-		SystemPrompt:      entry.SystemPrompt,
+		RequestID:          entry.RequestID,
+		Model:              entry.Model,
+		Provider:           entry.Provider,
+		UserMessage:        entry.UserMessage,
+		SystemPrompt:       entry.SystemPrompt,
 		CanvasElementCount: entry.CanvasElementCount,
-		ToolsCount:        entry.ToolsCount,
-		ResponseText:      entry.ResponseText,
-		ToolCalls:         toolCallsJSON,
-		FinishReason:      entry.FinishReason,
-		RequestDurationMs: entry.RequestDurationMs,
-		PromptTokens:      entry.PromptTokens,
-		CompletionTokens:  entry.CompletionTokens,
-		TotalTokens:       entry.TotalTokens,
-		Status:            entry.Status,
-		ErrorMessage:      entry.ErrorMessage,
-		ClientIP:          entry.ClientIP,
-		UserAgent:         entry.UserAgent,
+		ToolsCount:         entry.ToolsCount,
+		ResponseText:       entry.ResponseText,
+		ToolCalls:          toolCallsJSON,
+		FinishReason:       entry.FinishReason,
+		RequestDurationMs:  entry.RequestDurationMs,
+		PromptTokens:       entry.PromptTokens,
+		CompletionTokens:   entry.CompletionTokens,
+		TotalTokens:        entry.TotalTokens,
+		Status:             entry.Status,
+		ErrorMessage:       entry.ErrorMessage,
+		ClientIP:           entry.ClientIP,
+		UserAgent:          entry.UserAgent,
 	}
 
 	if err := a.repo.Insert(dbLog); err != nil {
@@ -485,7 +485,7 @@ func aiLogsHandler(repo *database.AIRequestLogRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		limit := 50
 		if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 200 {
+			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 200 {
 				limit = parsed
 			}
 		}

@@ -2,14 +2,20 @@
 
 ## 🎯 Overview
 
-**New Strategy (2026-06-02)**: Interceptor-based refresh on 401 responses
+**New Strategy (2026-06-02)**: Interceptor-based refresh on 401 responses + proactive refresh on page load
 **Old Strategy (Removed)**: Polling every 30 seconds
 
 ---
 
 ## ✅ How It Works
 
-### 1. **API Services with Auto-Retry**
+### 1. **Page Load Proactive Refresh**
+- When app starts and user is authenticated
+- Check if access token is expired or expiring soon (<30s)
+- Refresh proactively BEFORE any API calls
+- Prevents immediate 401 errors on page load/refresh
+
+### 2. **API Services with Auto-Retry**
 - `apiService.ts` - All auth/file/canvas operations
 - `fileService.ts` - File CRUD operations
 - Both services intercept 401 responses and trigger token refresh
@@ -17,6 +23,32 @@
 ### 2. **Token Refresh Flow**
 
 ```
+┌──────────────┐
+│  Page Load   │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────────┐
+│ isAuthenticated? │────No────▶ Skip refresh
+└──────┬───────────┘
+       │ Yes
+       ▼
+┌──────────────────┐
+│ Token expired or │
+│ expiring <30s?   │────No────▶ Continue
+└──────┬───────────┘
+       │ Yes
+       ▼
+┌─────────────────────┐
+│ tokenRefreshService │
+│  .refreshTokens()   │
+└──────┬──────────────┘
+       │
+       ├──Success──▶ Token refreshed, ready for use
+       │
+       └──Failure──▶ clearAuth() + show login modal
+
+
 ┌─────────────┐
 │ API Request │
 │ (with token)│
@@ -48,6 +80,11 @@
 - Refresh preemptively if within 30s of expiry
 - Prevents mid-stream authentication errors
 
+### 5. **Page Load/Refresh Optimization**
+- On app mount: check token expiry immediately
+- Refresh before user makes any API calls
+- Seamless UX: no 401 errors on fresh page load
+
 ---
 
 ## 📂 Updated Files
@@ -70,6 +107,13 @@
 class TokenRefreshService {
   private isRefreshing = false;
   private refreshPromise: Promise<boolean> | null = null;
+
+  async start(): Promise<void> {
+    // NEW: Proactive refresh on page load
+    if (isAuthenticated && this.isTokenExpired()) {
+      await this.refreshTokens();
+    }
+  }
 
   async refreshTokens(): Promise<boolean> {
     // Deduplication: return existing promise if already refreshing
@@ -138,12 +182,15 @@ private async request<T>(path, options, retryOn401 = true): Promise<T> {
 
 ### Manual Test
 1. Login to app
-2. Wait for token to expire (check JWT exp claim)
-3. Make any API call (save file, join room, etc.)
-4. **Expected**: 401 → auto-refresh → request succeeds
-5. Check console: `[TokenRefresh] Tokens refreshed successfully`
+2. **New: Close browser tab, reopen after token expires**
+3. **Expected**: Token auto-refreshes on page load, no 401 errors
+4. Make any API call (save file, join room, etc.)
+5. **Expected**: Request succeeds immediately
+6. Check console: `[TokenRefresh] Token expired on page load, refreshing...`
 
 ### Edge Cases Covered
+- ✅ Page load with expired token → proactive refresh
+- ✅ Page refresh during active session → token validated
 - ✅ Concurrent 401s (multiple API calls expire simultaneously)
 - ✅ Refresh token expired → auto-logout
 - ✅ Network error during refresh → logout
@@ -157,6 +204,8 @@ private async request<T>(path, options, retryOn401 = true): Promise<T> {
 2. **Direct fetch in tokenRefreshService** - avoids circular dependency with apiService
 3. **Auto-logout on refresh failure** - prevents stuck "authenticated but can't access" state
 4. **Token expiry buffer (30s)** - prevents mid-operation expiry
+5. **Page load refresh** - ensures token is fresh before any user action (NEW)
+6. **No credentials in logs** - only log refresh success/failure, not token values
 
 ---
 
@@ -189,3 +238,4 @@ private async request<T>(path, options, retryOn401 = true): Promise<T> {
 2. **Retry with exponential backoff**: If refresh fails due to network (not auth error)
 3. **Token rotation in background**: Proactive refresh at 80% of token lifetime (optional)
 4. **Refresh token rotation**: Backend rotates refresh token on each use (security best practice)
+5. **Offline detection**: Skip refresh attempts when offline, retry when back online

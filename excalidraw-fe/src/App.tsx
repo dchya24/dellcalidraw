@@ -79,9 +79,12 @@ function App() {
   }, [user, isAuthenticated, username]);
 
   // Start/stop token refresh service based on auth state
+  // Proactively refresh token on page load if expired
   useEffect(() => {
     if (isAuthenticated) {
-      tokenRefreshService.start();
+      tokenRefreshService.start().catch((err) => {
+        console.error('[App] Failed to start token refresh service:', err);
+      });
     } else {
       tokenRefreshService.stop();
     }

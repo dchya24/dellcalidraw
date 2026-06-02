@@ -38,9 +38,17 @@
 - ✅ Direct `fetch()` to avoid circular dependency
 - ✅ `isTokenExpired()` JWT decoder (client-side check)
 - ✅ Auto-logout on refresh failure
+- ✅ **NEW: Proactive refresh on page load** (`start()` now async)
 
 **Key Logic:**
 ```typescript
+async start(): Promise<void> {
+  // NEW: Check and refresh on page load
+  if (isAuthenticated && this.isTokenExpired()) {
+    await this.refreshTokens();
+  }
+}
+
 async refreshTokens(): Promise<boolean> {
   // Dedup: return existing promise if already refreshing
   if (this.isRefreshing && this.refreshPromise) {
@@ -113,11 +121,24 @@ async function getAuthHeadersWithRefresh() {
 
 ---
 
-### 5. **App.tsx** (No Changes)
+### 5. **App.tsx** (Minor Update)
 
-`tokenRefreshService.start()` and `stop()` are now **no-ops**:
-- Kept for backward compatibility
-- No actual timer started/stopped
+`tokenRefreshService.start()` now returns Promise:
+- Handle async start with `.catch()` for error logging
+- Proactive refresh happens immediately on auth state change
+- Seamless UX: no 401 on page load/refresh
+
+```typescript
+useEffect(() => {
+  if (isAuthenticated) {
+    tokenRefreshService.start().catch((err) => {
+      console.error('[App] Failed to start token refresh service:', err);
+    });
+  } else {
+    tokenRefreshService.stop();
+  }
+}, [isAuthenticated]);
+```
 
 ---
 
@@ -161,12 +182,13 @@ async function getAuthHeadersWithRefresh() {
 ## 🧪 Testing Checklist
 
 - [x] Build succeeds (`npm run build`)
+- [ ] Manual test: **Page load with expired token → proactive refresh (NEW)**
 - [ ] Manual test: 401 triggers refresh + retry
 - [ ] Manual test: Concurrent 401s → single refresh
 - [ ] Manual test: Refresh failure → auto-logout
 - [ ] Manual test: AI proactive refresh (<30s expiry)
 - [ ] Network tab: No background polling visible
-- [ ] Console logs: Refresh only on 401
+- [ ] Console logs: Refresh only on page load or 401
 
 **Test Script**: `./TEST_TOKEN_REFRESH.sh`
 
@@ -210,12 +232,16 @@ Documentation:
    - Enhancement: Retry 3x with backoff if network fails
 
 3. **Proactive refresh at 80% token lifetime**
-   - Currently: Reactive on 401
+   - Currently: Reactive on 401 + page load check
    - Enhancement: Optional background refresh before expiry
 
 4. **Refresh token rotation**
    - Currently: Same refresh token reused
    - Enhancement: Backend rotates refresh token on each use (security)
+
+5. **Offline detection**
+   - Currently: Refresh attempts even when offline
+   - Enhancement: Skip refresh when offline, retry on reconnect
 
 ---
 

@@ -18,11 +18,32 @@ class TokenRefreshService {
   }> = [];
 
   /**
-   * Start the service (no-op for compatibility)
-   * Old polling mechanism removed
+   * Start the service and check token on page load
+   * Proactively refresh if token is expired or about to expire
    */
-  start(): void {
-    console.log('[TokenRefresh] Service ready (on-demand refresh only)');
+  async start(): Promise<void> {
+    console.log('[TokenRefresh] Service starting...');
+    
+    const { isAuthenticated } = useAuthStore.getState();
+    
+    if (!isAuthenticated) {
+      console.log('[TokenRefresh] Not authenticated, skipping initial refresh');
+      return;
+    }
+
+    // Check if token is expired or expiring soon on page load
+    if (this.isTokenExpired()) {
+      console.log('[TokenRefresh] Token expired on page load, refreshing...');
+      const success = await this.refreshTokens();
+      
+      if (success) {
+        console.log('[TokenRefresh] Initial refresh successful');
+      } else {
+        console.log('[TokenRefresh] Initial refresh failed, user will be logged out');
+      }
+    } else {
+      console.log('[TokenRefresh] Token valid on page load');
+    }
   }
 
   /**

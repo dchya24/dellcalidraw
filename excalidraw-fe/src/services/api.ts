@@ -45,11 +45,11 @@ class ApiService {
     // Handle 401 Unauthorized - trigger token refresh
     if (response.status === 401 && retryOn401 && path !== '/api/auth/refresh') {
       console.log('[ApiService] 401 Unauthorized, attempting token refresh...');
-      
+
       // Dynamic import to avoid circular dependency
       const { tokenRefreshService } = await import('./tokenRefreshService');
       const refreshSuccess = await tokenRefreshService.refreshTokens();
-      
+
       if (refreshSuccess) {
         console.log('[ApiService] Token refreshed, retrying request...');
         // Retry the request once with new token (retryOn401 = false to prevent infinite loop)
@@ -88,14 +88,14 @@ class ApiService {
     return this.request<AuthResponse>("/api/auth/register", {
       method: "POST",
       body: JSON.stringify(data),
-    });
+    }, false);
   }
 
   async login(data: LoginRequest): Promise<AuthResponse> {
     return this.request<AuthResponse>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify(data),
-    });
+    }, false);
   }
 
   async refreshToken(refreshToken: string): Promise<AuthResponse> {

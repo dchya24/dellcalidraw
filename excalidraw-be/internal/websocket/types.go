@@ -164,3 +164,138 @@ type FileUploadedResponse struct {
 	Size       int64  `json:"size"`
 	StorageKey string `json:"storageKey"`
 }
+
+// Phase 11–12: WebSocket message encryption handshake.
+// Sent once from server → client immediately after a successful
+// join_room, plaintext, before any encrypted traffic.
+type EncryptionHandshakePayload struct {
+	RoomID string `json:"roomId"`
+	Key    string `json:"key"` // base64 AES-256 key, 44 chars
+}
+
+// Phase 11: Room Permissions & Advanced Features
+
+// JoinRoomPayload extended with password support
+type JoinRoomWithPasswordPayload struct {
+	RoomID   string `json:"roomId"`
+	Username string `json:"username"`
+	Password string `json:"password,omitempty"`
+}
+
+// Room settings payload
+type RoomSettingsPayload struct {
+	RoomID         string `json:"roomId"`
+	HasPassword    bool   `json:"hasPassword"`
+	IsPublic       bool   `json:"isPublic"`
+	AllowAnonymous bool   `json:"allowAnonymous"`
+	IsOwner        bool   `json:"isOwner"`
+	UserRole       string `json:"userRole,omitempty"` // owner, editor, viewer, or empty for anonymous
+}
+
+// Set room password request
+type SetRoomPasswordPayload struct {
+	RoomID   string `json:"roomId"`
+	Password string `json:"password"` // Empty string to remove password
+}
+
+// Update room settings request
+type UpdateRoomSettingsPayload struct {
+	RoomID         string `json:"roomId"`
+	IsPublic       *bool  `json:"isPublic,omitempty"`
+	AllowAnonymous *bool  `json:"allowAnonymous,omitempty"`
+}
+
+// Room member management
+type RoomMemberPayload struct {
+	UserID   string `json:"userId"`
+	Username string `json:"username"`
+	Email    string `json:"email,omitempty"`
+	Role     string `json:"role"` // owner, editor, viewer
+}
+
+type GetRoomMembersPayload struct {
+	RoomID string `json:"roomId"`
+}
+
+type RoomMembersListPayload struct {
+	RoomID  string              `json:"roomId"`
+	Members []RoomMemberPayload `json:"members"`
+}
+
+type UpdateMemberRolePayload struct {
+	RoomID string `json:"roomId"`
+	UserID string `json:"userId"`
+	Role   string `json:"role"` // editor, viewer
+}
+
+type RemoveMemberPayload struct {
+	RoomID string `json:"roomId"`
+	UserID string `json:"userId"`
+}
+
+type MemberRoleUpdatedPayload struct {
+	RoomID    string `json:"roomId"`
+	UserID    string `json:"userId"`
+	Username  string `json:"username"`
+	Role      string `json:"role"`
+	UpdatedBy string `json:"updatedBy"`
+}
+
+type MemberRemovedPayload struct {
+	RoomID    string `json:"roomId"`
+	UserID    string `json:"userId"`
+	RemovedBy string `json:"removedBy"`
+}
+
+// Room invitation
+type CreateInvitationPayload struct {
+	RoomID string `json:"roomId"`
+	Email  string `json:"email,omitempty"`
+	Role   string `json:"role"` // editor, viewer
+}
+
+type InvitationPayload struct {
+	ID        string `json:"id"`
+	RoomID    string `json:"roomId"`
+	Email     string `json:"email,omitempty"`
+	Role      string `json:"role"`
+	Token     string `json:"token"`
+	InviteURL string `json:"inviteUrl"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
+type AcceptInvitationPayload struct {
+	Token string `json:"token"`
+}
+
+type GetInvitationsPayload struct {
+	RoomID string `json:"roomId"`
+}
+
+type InvitationsListPayload struct {
+	RoomID      string              `json:"roomId"`
+	Invitations []InvitationPayload `json:"invitations"`
+}
+
+type DeleteInvitationPayload struct {
+	RoomID       string `json:"roomId"`
+	InvitationID string `json:"invitationId"`
+}
+
+// Permission denied response
+type PermissionDeniedPayload struct {
+	Action  string `json:"action"`
+	Message string `json:"message"`
+}
+
+// Room state extended with settings
+type RoomStateWithSettingsPayload struct {
+	Elements     []ElementPayload    `json:"elements"`
+	Participants []UserPayload       `json:"participants"`
+	Settings     RoomSettingsPayload `json:"settings"`
+}
+
+// Password required response (sent when joining password-protected room)
+type PasswordRequiredPayload struct {
+	RoomID string `json:"roomId"`
+}

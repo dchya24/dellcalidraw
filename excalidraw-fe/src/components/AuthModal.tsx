@@ -7,11 +7,12 @@ import { apiService, AuthError } from "../services/api";
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onForgotPassword?: () => void;
 }
 
 type AuthMode = "login" | "register";
 
-export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose, onForgotPassword }: AuthModalProps) {
   const { theme } = useThemeStore();
   const { setAuth } = useAuthStore();
 
@@ -193,6 +194,17 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                     : "bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-300 focus:border-blue-500"
                 }`}
               />
+              {mode === "login" && onForgotPassword && (
+                <button
+                  type="button"
+                  onClick={onForgotPassword}
+                  className={`mt-1.5 text-sm transition-colors ${
+                    isDark ? "text-blue-400 hover:text-blue-300" : "text-blue-600 hover:text-blue-500"
+                  }`}
+                >
+                  Forgot password?
+                </button>
+              )}
             </div>
 
             <button

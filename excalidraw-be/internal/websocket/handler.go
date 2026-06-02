@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/you/excalidraw-be/internal/auth"
+	appcrypto "github.com/you/excalidraw-be/internal/crypto"
 	"github.com/you/excalidraw-be/internal/room"
 )
 
@@ -25,7 +26,13 @@ type Connection struct {
 	UserID       string
 	AuthUserID   string
 	AuthUsername string
-	mu           sync.Mutex
+	// EncryptionKey is the per-room AES-256 key set after join_room.
+	// When non-nil, all outbound messages on this connection (except the
+	// initial 'encryption_handshake' that delivers the key itself) are
+	// wrapped in an `encrypted` envelope, and inbound messages of type
+	// 'encrypted' are decrypted with this key.
+	EncryptionKey []byte
+	mu            sync.Mutex
 }
 
 // Hub manages active connections
@@ -36,7 +43,74 @@ type Hub struct {
 	rateLimiter       *RateLimiter
 	cursorRateLimiter *CursorRateLimiter
 	authService       *auth.AuthService
+	dbClient          DBClient // Database client for permissions (Phase 11)
+	encryptionEnabled bool     // Phase 11: WS message encryption (Phase 11-12)
 	mu                sync.RWMutex
+}
+
+// DBClient interface for database operations needed by Hub
+type DBClient interface {
+	GetRoomByKey(roomKey string) (string, error)
+	GetOrCreateRoom(roomKey string) (string, error)
+	GetOrCreateRoomEncryptionKey(roomDBID string, gen func() (string, error)) (string, error)
+	HasRoomPassword(roomDBID string) (bool, error)
+	VerifyRoomPassword(roomDBID string, password string) (bool, error)
+	GetRoomSettings(roomDBID string) (*RoomSettingsDB, error)
+	UpdateRoomSettings(roomDBID string, isPublic, allowAnonymous bool) error
+	SetRoomPassword(roomDBID string, password string) error
+	RemoveRoomPassword(roomDBID string) error
+	SetRoomOwner(roomDBID string, userID string) error
+	GetRoomOwner(roomDBID string) (*string, error)
+	GetUserRole(roomDBID, userID string) (string, error)
+	CanUserPerformAction(roomDBID, userID string, action string) (bool, error)
+	GetRoomMembers(roomDBID string) ([]RoomMemberDB, error)
+	AddRoomMember(roomDBID, userID string, role string, invitedBy *string) error
+	UpdateRoomMemberRole(roomDBID, userID string, role string) error
+	RemoveRoomMember(roomDBID, userID string) error
+	CreateRoomInvitation(roomDBID string, email string, role string, invitedBy *string, expiresIn interface{}) (*RoomInvitationDB, error)
+	GetRoomInvitationByToken(token string) (*RoomInvitationDB, error)
+	UseRoomInvitation(token string) error
+	GetRoomInvitations(roomDBID string) ([]RoomInvitationDB, error)
+	DeleteRoomInvitation(invitationID string) error
+	GetUserByID(userID string) (*UserDB, error)
+}
+
+// RoomSettingsDB represents room settings from database
+type RoomSettingsDB struct {
+	OwnerID        *string
+	HasPassword    bool
+	IsPublic       bool
+	AllowAnonymous bool
+}
+
+// RoomMemberDB represents a room member from database
+type RoomMemberDB struct {
+	ID        string
+	RoomID    string
+	UserID    string
+	Username  string
+	Email     string
+	Role      string
+	InvitedBy *string
+}
+
+// RoomInvitationDB represents a room invitation from database
+type RoomInvitationDB struct {
+	ID        string
+	RoomID    string
+	Email     string
+	Role      string
+	Token     string
+	InvitedBy *string
+	ExpiresAt interface{}
+	UsedAt    interface{}
+}
+
+// UserDB represents a user from database
+type UserDB struct {
+	ID       string
+	Username string
+	Email    string
 }
 
 // NewHub creates a new connection hub
@@ -49,6 +123,19 @@ func NewHub(rm *room.RoomManager, authService *auth.AuthService) *Hub {
 		cursorRateLimiter: NewCursorRateLimiter(),
 		authService:       authService,
 	}
+}
+
+// SetDBClient sets the database client for permission checks
+func (h *Hub) SetDBClient(db DBClient) {
+	h.dbClient = db
+}
+
+// SetEncryptionEnabled toggles per-room AES-GCM message encryption.
+// When enabled, the server requires the client to negotiate a key on
+// join_room and exchange all subsequent messages wrapped in an
+// 'encrypted' envelope. When disabled, the handler operates as before.
+func (h *Hub) SetEncryptionEnabled(enabled bool) {
+	h.encryptionEnabled = enabled
 }
 
 // HandleWebSocket handles WebSocket connections
@@ -186,6 +273,21 @@ func (h *Hub) handleMessage(conn *Connection, message []byte) {
 		return
 	}
 
+	// Phase 11: unwrap encrypted envelope. Once a connection has a room
+	// key, both client and server exchange ciphertext exclusively. The
+	// 'encrypted' envelope is the only plaintext type seen on the wire
+	// after handshake.
+	if wsMsg.Type == "encrypted" {
+		inner, err := h.decryptInbound(conn, wsMsg.Payload)
+		if err != nil {
+			slog.Warn("Failed to decrypt inbound message", "error", err, "connID", conn.ID)
+			h.sendError(conn, "Decryption failed", "decryption_failed")
+			return
+		}
+		wsMsg = inner
+		slog.Debug("🔓 Decrypted inbound", "connID", conn.ID, "type", wsMsg.Type)
+	}
+
 	slog.Info("✅ Message parsed successfully", "connID", conn.ID, "type", wsMsg.Type, "payload", wsMsg.Payload)
 
 	// Handle heartbeat ping from client
@@ -204,7 +306,7 @@ func (h *Hub) handleMessage(conn *Connection, message []byte) {
 	switch wsMsg.Type {
 	case "join_room":
 		slog.Info("🚪 Routing to handleJoinRoom", "connID", conn.ID)
-		h.handleJoinRoom(conn, wsMsg.Payload)
+		h.handleJoinRoomWithPassword(conn, wsMsg.Payload)
 	case "leave_room":
 		slog.Info("🚪 Routing to handleLeaveRoom", "connID", conn.ID)
 		h.handleLeaveRoom(conn, wsMsg.Payload)
@@ -226,6 +328,37 @@ func (h *Hub) handleMessage(conn *Connection, message []byte) {
 	case "file_deleted":
 		slog.Info("🗑️ Routing to handleFileDeleted", "connID", conn.ID)
 		h.handleFileDeleted(conn, wsMsg.Payload)
+	// Phase 11: Room Permissions
+	case "get_room_settings":
+		slog.Info("⚙️ Routing to handleGetRoomSettings", "connID", conn.ID)
+		h.handleGetRoomSettings(conn, wsMsg.Payload)
+	case "set_room_password":
+		slog.Info("🔐 Routing to handleSetRoomPassword", "connID", conn.ID)
+		h.handleSetRoomPassword(conn, wsMsg.Payload)
+	case "update_room_settings":
+		slog.Info("⚙️ Routing to handleUpdateRoomSettings", "connID", conn.ID)
+		h.handleUpdateRoomSettings(conn, wsMsg.Payload)
+	case "get_room_members":
+		slog.Info("👥 Routing to handleGetRoomMembers", "connID", conn.ID)
+		h.handleGetRoomMembers(conn, wsMsg.Payload)
+	case "update_member_role":
+		slog.Info("👤 Routing to handleUpdateMemberRole", "connID", conn.ID)
+		h.handleUpdateMemberRole(conn, wsMsg.Payload)
+	case "remove_member":
+		slog.Info("👤 Routing to handleRemoveMember", "connID", conn.ID)
+		h.handleRemoveMember(conn, wsMsg.Payload)
+	case "create_invitation":
+		slog.Info("📨 Routing to handleCreateInvitation", "connID", conn.ID)
+		h.handleCreateInvitation(conn, wsMsg.Payload)
+	case "accept_invitation":
+		slog.Info("📨 Routing to handleAcceptInvitation", "connID", conn.ID)
+		h.handleAcceptInvitation(conn, wsMsg.Payload)
+	case "get_invitations":
+		slog.Info("📨 Routing to handleGetInvitations", "connID", conn.ID)
+		h.handleGetInvitations(conn, wsMsg.Payload)
+	case "delete_invitation":
+		slog.Info("📨 Routing to handleDeleteInvitation", "connID", conn.ID)
+		h.handleDeleteInvitation(conn, wsMsg.Payload)
 	default:
 		slog.Warn("❓ Unknown message type", "type", wsMsg.Type, "connID", conn.ID)
 	}
@@ -382,6 +515,41 @@ func (h *Hub) handleJoinRoom(conn *Connection, payload map[string]interface{}) {
 	// Add user to room
 	r.AddUser(user)
 
+	// Phase 11–12: establish per-room encryption key. Send a plaintext
+	// handshake first, then arm the connection so all subsequent traffic
+	// (room_state, broadcasts) is encrypted.
+	if h.encryptionEnabled && h.dbClient != nil {
+		roomDBID, err := h.dbClient.GetOrCreateRoom(joinMsg.RoomID)
+		if err != nil {
+			slog.Warn("Failed to resolve room for encryption key", "error", err, "roomID", joinMsg.RoomID)
+		} else {
+			keyB64, err := h.dbClient.GetOrCreateRoomEncryptionKey(roomDBID, func() (string, error) {
+				k, err := appcrypto.GenerateKey()
+				if err != nil {
+					return "", err
+				}
+				return appcrypto.EncodeKey(k), nil
+			})
+			if err != nil {
+				slog.Error("Failed to obtain room encryption key", "error", err, "roomID", joinMsg.RoomID)
+			} else if rawKey, err := appcrypto.DecodeKey(keyB64); err == nil {
+				// Send key plaintext, THEN arm the connection. The order
+				// guarantees the client can decrypt the next frame.
+				if err := h.sendMessagePlain(conn, "encryption_handshake", EncryptionHandshakePayload{
+					RoomID: joinMsg.RoomID,
+					Key:    keyB64,
+				}); err != nil {
+					slog.Warn("Failed to deliver encryption handshake", "error", err, "connID", conn.ID)
+				} else {
+					conn.EncryptionKey = rawKey
+					slog.Info("🔐 Encryption armed for connection", "connID", conn.ID, "roomID", joinMsg.RoomID)
+				}
+			} else {
+				slog.Error("Stored encryption key is invalid", "error", err, "roomID", joinMsg.RoomID)
+			}
+		}
+	}
+
 	// Send current room state to new user
 	roomState := RoomStatePayload{
 		Elements:     elementsToPayload(r.GetElements()),
@@ -432,6 +600,15 @@ func (h *Hub) handleLeaveRoom(conn *Connection, payload map[string]interface{}) 
 func (h *Hub) handleUpdateElements(conn *Connection, payload map[string]interface{}) {
 	if conn.RoomID == "" {
 		h.sendError(conn, "Not in a room", "not_in_room")
+		return
+	}
+
+	// Check edit permission (Phase 11)
+	if !h.checkEditPermission(conn) {
+		h.sendMessage(conn, "permission_denied", PermissionDeniedPayload{
+			Action:  "edit",
+			Message: "You don't have permission to edit in this room",
+		})
 		return
 	}
 
@@ -585,6 +762,23 @@ func (h *Hub) unregisterConnection(conn *Connection) {
 
 // sendMessage sends a message to a specific connection
 func (h *Hub) sendMessage(conn *Connection, msgType string, payload interface{}) error {
+	data, err := h.frameMessage(conn, msgType, payload)
+	if err != nil {
+		return err
+	}
+
+	select {
+	case conn.Send <- data:
+		return nil
+	default:
+		return context.DeadlineExceeded
+	}
+}
+
+// sendMessagePlain sends a message bypassing per-connection encryption.
+// Used during the handshake to deliver the room encryption key itself,
+// and for the 'pong' control reply (no need to encrypt heartbeats).
+func (h *Hub) sendMessagePlain(conn *Connection, msgType string, payload interface{}) error {
 	data, err := json.Marshal(map[string]interface{}{
 		"type":    msgType,
 		"payload": payload,
@@ -603,27 +797,83 @@ func (h *Hub) sendMessage(conn *Connection, msgType string, payload interface{})
 
 // broadcastToRoom sends a message to all connections in a room except sender
 func (h *Hub) broadcastToRoom(roomID, msgType string, payload interface{}, excludeConnID string) {
-	data, err := json.Marshal(map[string]interface{}{
-		"type":    msgType,
-		"payload": payload,
-	})
-	if err != nil {
-		slog.Error("Failed to marshal broadcast message", "error", err)
-		return
-	}
-
+	// Each connection in the room may carry its own key, so build the
+	// frame per-recipient.
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
 	for _, conn := range h.connections {
-		if conn.RoomID == roomID && conn.ID != excludeConnID {
-			select {
-			case conn.Send <- data:
-			default:
-				slog.Warn("Failed to send message, channel full", "connID", conn.ID)
-			}
+		if conn.RoomID != roomID || conn.ID == excludeConnID {
+			continue
+		}
+		data, err := h.frameMessage(conn, msgType, payload)
+		if err != nil {
+			slog.Error("Failed to frame broadcast message", "error", err, "connID", conn.ID)
+			continue
+		}
+		select {
+		case conn.Send <- data:
+		default:
+			slog.Warn("Failed to send message, channel full", "connID", conn.ID)
 		}
 	}
+}
+
+// frameMessage marshals (type, payload) into a WS frame, encrypting the
+// envelope when the connection has a key. The 'encrypted' wrapper has the
+// shape {type:"encrypted", payload:{iv, ciphertext}}.
+func (h *Hub) frameMessage(conn *Connection, msgType string, payload interface{}) ([]byte, error) {
+	plain, err := json.Marshal(map[string]interface{}{
+		"type":    msgType,
+		"payload": payload,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if conn.EncryptionKey == nil {
+		return plain, nil
+	}
+
+	env, err := appcrypto.Seal(conn.EncryptionKey, plain)
+	if err != nil {
+		return nil, fmt.Errorf("seal outbound: %w", err)
+	}
+
+	return json.Marshal(map[string]interface{}{
+		"type":    "encrypted",
+		"payload": env,
+	})
+}
+
+// decryptInbound unwraps an 'encrypted' envelope and returns the inner
+// WSMessage. Requires the connection to already have a room key.
+func (h *Hub) decryptInbound(conn *Connection, payload map[string]interface{}) (WSMessage, error) {
+	var empty WSMessage
+	if conn.EncryptionKey == nil {
+		return empty, fmt.Errorf("no encryption key on connection")
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return empty, fmt.Errorf("marshal envelope: %w", err)
+	}
+
+	var env appcrypto.EncryptedEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return empty, fmt.Errorf("unmarshal envelope: %w", err)
+	}
+
+	plain, err := appcrypto.Open(conn.EncryptionKey, &env)
+	if err != nil {
+		return empty, fmt.Errorf("open envelope: %w", err)
+	}
+
+	var inner WSMessage
+	if err := json.Unmarshal(plain, &inner); err != nil {
+		return empty, fmt.Errorf("unmarshal inner: %w", err)
+	}
+	return inner, nil
 }
 
 // sendError sends an error message to a connection

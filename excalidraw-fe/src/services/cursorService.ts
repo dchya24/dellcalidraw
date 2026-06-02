@@ -6,7 +6,7 @@ class CursorService {
   private isTracking: boolean = false;
   private lastSentPosition: CursorPosition = { x: -1, y: -1 };
   private remoteCursors: Map<string, RemoteCursor> = new Map();
-  private updateInterval: number | null = null;
+  private updateInterval: ReturnType<typeof setInterval> | null = null;
   private cursorUpdateListeners: Set<(cursor: RemoteCursor) => void> = new Set();
   private cursorRemoveListeners: Set<(userId: string) => void> = new Set();
 

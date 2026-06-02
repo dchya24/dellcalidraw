@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Users, Copy, RefreshCw, Wifi, WifiOff, Loader2, ChevronDown, AlertCircle, User } from "lucide-react";
+import { Users, Copy, RefreshCw, Wifi, WifiOff, Loader2, ChevronDown, AlertCircle, User, Settings } from "lucide-react";
 import { roomService } from "../services/roomService";
 import { copyShareableLink } from "../utils/roomURL";
 import { useThemeStore } from "../store/useThemeStore";
@@ -9,6 +9,7 @@ interface CollaborationPanelProps {
   username: string;
   isAuthenticated?: boolean;
   onRegenerateRoomId: () => void;
+  onOpenSettings?: () => void;
 }
 
 export default function CollaborationPanel({
@@ -16,6 +17,7 @@ export default function CollaborationPanel({
   username,
   isAuthenticated = false,
   onRegenerateRoomId,
+  onOpenSettings,
 }: CollaborationPanelProps) {
   const [copied, setCopied] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -298,12 +300,27 @@ export default function CollaborationPanel({
                   </button>
                 )
               ) : (
-                <button
-                  onClick={handleLeaveRoom}
-                  className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
-                >
-                  Leave Room
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleLeaveRoom}
+                    className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                  >
+                    Leave Room
+                  </button>
+                  {onOpenSettings && (
+                    <button
+                      onClick={onOpenSettings}
+                      className={`px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
+                        theme === 'dark'
+                          ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                          : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                      }`}
+                      title="Room Settings"
+                    >
+                      <Settings size={16} />
+                    </button>
+                  )}
+                </div>
               )}
 
               {/* Participants List */}

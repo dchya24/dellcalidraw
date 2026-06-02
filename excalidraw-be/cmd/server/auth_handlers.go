@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,17 +13,38 @@ import (
 
 	"github.com/you/excalidraw-be/internal/auth"
 	"github.com/you/excalidraw-be/internal/database"
+	"github.com/you/excalidraw-be/internal/email"
 )
 
 type AuthHandler struct {
 	authService *auth.AuthService
 	db          *database.PostgresClient
+	emailer     email.Sender
+	emailFrom   string // RFC-5322 mailbox — carried for logging only
+	appBaseURL  string // used to build links inside transactional emails
 }
 
 func NewAuthHandler(authService *auth.AuthService, db *database.PostgresClient) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
 		db:          db,
+		// Default emailer when none injected: a no-op log sender so
+		// existing call sites that haven't been updated still compile
+		// and behave the same as before.
+		emailer:    &email.LogSender{},
+		appBaseURL: "http://localhost:3000",
+	}
+}
+
+// SetEmailer injects the transactional email sender + the user-facing
+// base URL used to build links. Wired up in main.go from config.
+func (ah *AuthHandler) SetEmailer(sender email.Sender, from, baseURL string) {
+	if sender != nil {
+		ah.emailer = sender
+	}
+	ah.emailFrom = from
+	if baseURL != "" {
+		ah.appBaseURL = baseURL
 	}
 }
 
@@ -66,7 +88,7 @@ func userProfileFromDB(u *database.User) UserProfile {
 		ID:        u.ID,
 		Username:  u.Username,
 		Email:     u.Email,
-		AvatarURL: u.AvatarURL,
+		AvatarURL: u.GetAvatarURL(),
 		CreatedAt: u.CreatedAt,
 	}
 }
@@ -362,7 +384,7 @@ func (ah *AuthHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"id":        user.ID,
 		"username":  user.Username,
-		"avatarUrl": user.AvatarURL,
+		"avatarUrl": user.GetAvatarURL(),
 	})
 }
 
@@ -382,4 +404,239 @@ func (ah *AuthHandler) CleanExpiredTokens(w http.ResponseWriter, r *http.Request
 
 func GenerateGuestUsername() string {
 	return fmt.Sprintf("Guest_%s", uuid.New().String()[:8])
+}
+
+// Password Reset Request Types
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+type ResetPasswordRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"newPassword"`
+}
+
+type ValidateResetTokenRequest struct {
+	Token string `json:"token"`
+}
+
+// ForgotPassword initiates password reset flow
+func (ah *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req ForgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body", "invalid_body")
+		return
+	}
+
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.Email == "" || !strings.Contains(req.Email, "@") {
+		writeJSONError(w, http.StatusBadRequest, "Valid email is required", "invalid_email")
+		return
+	}
+
+	// Always return success to prevent email enumeration
+	successResponse := func() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "If an account exists with this email, a password reset link has been sent",
+		})
+	}
+
+	user, err := ah.db.GetUserByEmail(req.Email)
+	if err != nil {
+		slog.Error("Failed to get user for password reset", "error", err)
+		successResponse()
+		return
+	}
+	if user == nil {
+		// Don't reveal that user doesn't exist
+		successResponse()
+		return
+	}
+
+	// Create password reset token (expires in 1 hour)
+	token, err := ah.db.CreatePasswordResetToken(user.ID, time.Hour)
+	if err != nil {
+		slog.Error("Failed to create password reset token", "error", err)
+		successResponse()
+		return
+	}
+
+	// Build the reset URL using the configured app base URL so links
+	// work in production deployments, not just localhost.
+	baseURL := strings.TrimRight(ah.appBaseURL, "/")
+	if baseURL == "" {
+		baseURL = "http://localhost:3000"
+	}
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", baseURL, token.Token)
+
+	// Compute expiry minutes from the actual token TTL (1 hour today).
+	expiryMinutes := int(time.Until(token.ExpiresAt).Minutes())
+	if expiryMinutes < 1 {
+		expiryMinutes = 60
+	}
+
+	// Send the email. We intentionally don't surface delivery errors to
+	// the client — the response is identical whether the user exists or
+	// not, to prevent enumeration. Failures are logged for ops.
+	msg := email.PasswordResetMessage(req.Email, resetURL, expiryMinutes)
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	if err := ah.emailer.Send(ctx, msg); err != nil {
+		slog.Error("Failed to deliver password reset email",
+			"error", err,
+			"email", req.Email,
+			"userID", user.ID,
+		)
+	} else {
+		slog.Info("Password reset email queued",
+			"email", req.Email,
+			"userID", user.ID,
+			"expiresAt", token.ExpiresAt,
+		)
+	}
+
+	successResponse()
+}
+
+// ValidateResetToken checks if a reset token is valid
+func (ah *AuthHandler) ValidateResetToken(w http.ResponseWriter, r *http.Request) {
+	var req ValidateResetTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body", "invalid_body")
+		return
+	}
+
+	if req.Token == "" {
+		writeJSONError(w, http.StatusBadRequest, "Token is required", "missing_token")
+		return
+	}
+
+	token, err := ah.db.GetPasswordResetToken(req.Token)
+	if err != nil {
+		slog.Error("Failed to get password reset token", "error", err)
+		writeJSONError(w, http.StatusInternalServerError, "Internal error", "internal_error")
+		return
+	}
+
+	if token == nil {
+		writeJSONError(w, http.StatusNotFound, "Invalid or expired reset token", "invalid_token")
+		return
+	}
+
+	if token.UsedAt != nil {
+		writeJSONError(w, http.StatusGone, "Reset token has already been used", "token_used")
+		return
+	}
+
+	if time.Now().After(token.ExpiresAt) {
+		writeJSONError(w, http.StatusGone, "Reset token has expired", "token_expired")
+		return
+	}
+
+	// Get user email for display (masked)
+	user, _ := ah.db.GetUserByID(token.UserID)
+	maskedEmail := ""
+	if user != nil {
+		maskedEmail = maskEmail(user.Email)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"valid":     true,
+		"email":     maskedEmail,
+		"expiresAt": token.ExpiresAt,
+	})
+}
+
+// ResetPassword completes the password reset
+func (ah *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req ResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body", "invalid_body")
+		return
+	}
+
+	if req.Token == "" {
+		writeJSONError(w, http.StatusBadRequest, "Token is required", "missing_token")
+		return
+	}
+
+	if req.NewPassword == "" || len(req.NewPassword) < 8 {
+		writeJSONError(w, http.StatusBadRequest, "Password must be at least 8 characters", "invalid_password")
+		return
+	}
+
+	token, err := ah.db.GetPasswordResetToken(req.Token)
+	if err != nil {
+		slog.Error("Failed to get password reset token", "error", err)
+		writeJSONError(w, http.StatusInternalServerError, "Internal error", "internal_error")
+		return
+	}
+
+	if token == nil {
+		writeJSONError(w, http.StatusNotFound, "Invalid or expired reset token", "invalid_token")
+		return
+	}
+
+	if token.UsedAt != nil {
+		writeJSONError(w, http.StatusGone, "Reset token has already been used", "token_used")
+		return
+	}
+
+	if time.Now().After(token.ExpiresAt) {
+		writeJSONError(w, http.StatusGone, "Reset token has expired", "token_expired")
+		return
+	}
+
+	// Hash new password
+	hashedPassword, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		slog.Error("Failed to hash password", "error", err)
+		writeJSONError(w, http.StatusInternalServerError, "Internal error", "internal_error")
+		return
+	}
+
+	// Update password
+	if err := ah.db.UpdateUserPassword(token.UserID, hashedPassword); err != nil {
+		slog.Error("Failed to update password", "error", err)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to update password", "update_failed")
+		return
+	}
+
+	// Mark token as used
+	if err := ah.db.UsePasswordResetToken(req.Token); err != nil {
+		slog.Warn("Failed to mark token as used", "error", err)
+	}
+
+	// Revoke all existing refresh tokens for security
+	if err := ah.db.RevokeAllUserTokens(token.UserID); err != nil {
+		slog.Warn("Failed to revoke user tokens", "error", err)
+	}
+
+	slog.Info("Password reset completed", "userID", token.UserID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Password has been reset successfully. Please log in with your new password.",
+	})
+}
+
+// maskEmail masks an email address for privacy (e.g., "j***@example.com")
+func maskEmail(email string) string {
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return "***"
+	}
+
+	local := parts[0]
+	domain := parts[1]
+
+	if len(local) <= 1 {
+		return local + "***@" + domain
+	}
+
+	return string(local[0]) + "***@" + domain
 }

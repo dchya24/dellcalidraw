@@ -35,6 +35,10 @@ jobs:
         working-directory: ./excalidraw-fe
         run: npx tsc --noEmit
 
+      - name: Test
+        working-directory: ./excalidraw-fe
+        run: npm test
+
       - name: Build
         working-directory: ./excalidraw-fe
         run: npm run build
@@ -58,7 +62,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: excalidraw-be/go.sum
 

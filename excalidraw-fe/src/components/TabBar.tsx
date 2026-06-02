@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Plus, X, List } from "lucide-react";
+import { Plus, X, List, Sidebar } from "lucide-react";
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
 import { useThemeStore } from "../store/useThemeStore";
 
@@ -8,9 +8,10 @@ interface TabBarProps {
   onAddTab: () => void;
   onDeleteRequest?: (tabId: string) => void;
   handleFloatingTabOpen: () => void;
+  onToggleSidebar?: () => void;
 }
 
-export default function TabBar({ onTabChange, onAddTab, onDeleteRequest, handleFloatingTabOpen }: TabBarProps) {
+export default function TabBar({ onTabChange, onAddTab, onDeleteRequest, handleFloatingTabOpen, onToggleSidebar }: TabBarProps) {
   const { getActiveFile, removeTab, renameTab, setActiveTab } = useWhiteboardStore();
   const { theme } = useThemeStore();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -87,12 +88,26 @@ export default function TabBar({ onTabChange, onAddTab, onDeleteRequest, handleF
           : "bg-gray-100 border-t border-gray-300"
       }`}
     >
+      <div>
+        <button
+          onClick={onToggleSidebar}
+          className={`p-1.5 rounded transition-colors cursor-pointer ${
+            theme === "dark"
+              ? "hover:bg-gray-700 text-gray-300"
+              : "hover:bg-gray-300"
+          }`}
+          title="Toggle sidebar"
+        >
+          <Sidebar size={18} />
+        </button>
+
+      </div>
       {/* Tab List Dropdown */}
       <div className="relative" ref={dropdownRef}>
         <button
           ref={buttonRef}
           onClick={handleToggleDropdown}
-          className={`p-1.5 rounded transition-colors ${
+          className={`p-1.5 rounded transition-colors cursor-pointer ${
             theme === "dark"
               ? "hover:bg-gray-700 text-gray-300"
               : "hover:bg-gray-300"
@@ -152,7 +167,7 @@ export default function TabBar({ onTabChange, onAddTab, onDeleteRequest, handleF
       ))}
       <button
         onClick={handleAddTab}
-        className={`p-1.5 rounded transition-colors ${
+        className={`p-1.5 rounded transition-colors cursor-pointer ${
           theme === "dark" ? "hover:bg-gray-700 text-gray-300" : "hover:bg-gray-300"
         }`}
         title="Add new tab"

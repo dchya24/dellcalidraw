@@ -1,8 +1,11 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -63,6 +66,7 @@ func (s *AuthService) GenerateTokenPair(userID, username, email string) (*TokenP
 		},
 	}
 
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	accessToken, err := token.SignedString(s.secretKey)
 	if err != nil {
@@ -104,13 +108,19 @@ func (s *AuthService) RefreshTokenTTL() time.Duration {
 	return s.refreshTokenTTL
 }
 
+// generateRefreshToken returns an opaque random token suitable for
+// storage in the refresh_tokens table. JWT-style refresh tokens that
+// carry only RegisteredClaims are deterministic for a given secret +
+// timestamp, so two logins in the same second collide on the unique
+// (token) constraint. Random tokens also limit the blast radius if
+// the DB column ever leaks: a leaked random string only reveals the
+// individual session, not the server secret.
 func (s *AuthService) generateRefreshToken() (string, error) {
-	claims := jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.refreshTokenTTL)),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		Issuer:    "excalidraw-be-refresh",
+	// 32 bytes → 256 bits of entropy. Encode URL-safe so the token can
+	// safely round-trip through query strings if ever needed.
+	buf := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, buf); err != nil {
+		return "", fmt.Errorf("failed to read random bytes for refresh token: %w", err)
 	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.secretKey)
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }

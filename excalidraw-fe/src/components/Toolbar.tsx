@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import {
   Download,
   Upload,
@@ -8,38 +8,47 @@ import {
   Moon,
   Sun,
   Sidebar,
-  LogIn,
-  LogOut,
-  User,
+  Save,
+  FolderOpen,
+  Loader2,
+  Files,
 } from "lucide-react";
 import { useWhiteboardStore } from "../store/useWhiteboardStore";
 import { useThemeStore } from "../store/useThemeStore";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { exportToSvg, exportToBlob } from "@excalidraw/excalidraw";
 import CollaborationPanel from "./CollaborationPanel";
-import type { WhiteboardTab } from "../store/useWhiteboardStore";
+import { apiService } from "../services/api";
+import {
+  exportActiveSheetJSON,
+  exportFileAllSheets,
+  exportActiveSheetPNG,
+  exportActiveSheetSVG,
+  handleFileImport,
+  saveActiveSheetToCloud,
+  loadActiveSheetFromCloud,
+} from "../services/exportImportService";
 
 interface ToolbarProps {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   onToggleSidebar?: () => void;
   username?: string;
   isAuthenticated?: boolean;
-  onOpenAuth?: () => void;
-  onLogout?: () => void;
+  onOpenRoomSettings?: () => void;
+  onSaveToCloud?: () => void;
 }
 
-export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Guest", isAuthenticated = false, onOpenAuth, onLogout }: ToolbarProps) {
+export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Guest", isAuthenticated = false, onOpenRoomSettings, onSaveToCloud }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { theme, toggleTheme } = useThemeStore();
   const {
-    loadFromFile,
-    loadNativeExcalidraw,
-    getActiveTab,
     getActiveTabRoomId,
     regenerateRoomId,
   } = useWhiteboardStore();
 
   const roomId = getActiveTabRoomId();
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   // Sync Excalidraw theme with app theme
   useEffect(() => {
@@ -52,83 +61,66 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
     }
   }, [theme, excalidrawAPI]);
 
-  // Export in native Excalidraw format (current tab only)
+  // Clear save status after 3 seconds
+  useEffect(() => {
+    if (saveStatus) {
+      const timer = setTimeout(() => setSaveStatus(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [saveStatus]);
+
+  // Save canvas to cloud
+  const handleSaveToCloud = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    setSaveStatus(null);
+
+    const result = await saveActiveSheetToCloud(apiService);
+    if (result.success) {
+      setSaveStatus(`Saved ${result.count} elements`);
+    } else {
+      setSaveStatus(result.error || "Save failed");
+    }
+    setIsSaving(false);
+  };
+
+  // Load canvas from cloud
+  const handleLoadFromCloud = async () => {
+    if (!excalidrawAPI || isLoading) return;
+    setIsLoading(true);
+    setSaveStatus(null);
+
+    const result = await loadActiveSheetFromCloud(excalidrawAPI, apiService);
+    if (result.success) {
+      setSaveStatus(`Loaded ${result.count} elements`);
+    } else {
+      setSaveStatus(result.error || "Load failed");
+    }
+    setIsLoading(false);
+  };
+
+  // Export handlers
   const handleExportJSON = () => {
     if (!excalidrawAPI) return;
+    exportActiveSheetJSON(excalidrawAPI);
+  };
 
-    const elements = excalidrawAPI.getSceneElements();
-    const appState = excalidrawAPI.getAppState();
-    const files = excalidrawAPI.getFiles();
-
-    const exportData = {
-      type: "excalidraw",
-      version: 2,
-      source: "whiteboard-app",
-      elements: elements,
-      appState: {
-        viewBackgroundColor: appState.viewBackgroundColor,
-        gridSize: appState.gridSize,
-      },
-      files: files,
-    };
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const activeTab = getActiveTab();
-    a.download = `${activeTab?.title || "whiteboard"}.excalidraw`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExportAllSheets = () => {
+    if (!excalidrawAPI) return;
+    exportFileAllSheets(excalidrawAPI);
   };
 
   const handleExportPNG = async () => {
     if (!excalidrawAPI) return;
-    const elements = excalidrawAPI.getSceneElements();
-    const appState = excalidrawAPI.getAppState();
-    const files = excalidrawAPI.getFiles();
-
-    const blob = await exportToBlob({
-      elements,
-      appState: { ...appState, exportWithDarkMode: false },
-      files,
-      mimeType: "image/png",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const activeTab = getActiveTab();
-    a.download = `${activeTab?.title || "whiteboard"}.png`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await exportActiveSheetPNG(excalidrawAPI);
   };
 
   const handleExportSVG = async () => {
     if (!excalidrawAPI) return;
-    const elements = excalidrawAPI.getSceneElements();
-    const appState = excalidrawAPI.getAppState();
-    const files = excalidrawAPI.getFiles();
-
-    const svg = await exportToSvg({
-      elements,
-      appState: { ...appState, exportWithDarkMode: false },
-      files,
-    });
-
-    const svgString = new XMLSerializer().serializeToString(svg);
-    const blob = new Blob([svgString], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const activeTab = getActiveTab();
-    a.download = `${activeTab?.title || "whiteboard"}.svg`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await exportActiveSheetSVG(excalidrawAPI);
   };
 
+  // Import handlers
   const handleImport = () => {
     fileInputRef.current?.click();
   };
@@ -139,52 +131,12 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target?.result as string);
+      const content = event.target?.result as string;
+      if (!excalidrawAPI) return;
 
-        // Check if it's our multi-tab format
-        if (data.tabs && data.activeTabId) {
-          loadFromFile(data);
-          if (excalidrawAPI) {
-            const activeTab = data.tabs.find(
-              (t: WhiteboardTab) => t.id === data.activeTabId
-            );
-            if (activeTab) {
-              excalidrawAPI.updateScene({
-                elements: activeTab.data.elements,
-              });
-              excalidrawAPI.history.clear();
-            }
-          }
-        }
-        // Check if it's native Excalidraw format
-        else if (Array.isArray(data.elements) || data.type === "excalidraw") {
-          const elements = data.elements || [];
-          const appState = data.appState || {};
-          const files = data.files || {};
-
-          loadNativeExcalidraw(elements, appState, files);
-
-          if (excalidrawAPI) {
-            excalidrawAPI.updateScene({ elements });
-            excalidrawAPI.history.clear();
-          }
-        }
-        // Maybe it's just an array of elements
-        else if (Array.isArray(data)) {
-          loadNativeExcalidraw(data, {}, {});
-
-          if (excalidrawAPI) {
-            excalidrawAPI.updateScene({ elements: data });
-            excalidrawAPI.history.clear();
-          }
-        }
-        else {
-          alert("Unrecognized file format");
-        }
-      } catch (err) {
-        console.error("Failed to parse file:", err);
-        alert("Invalid file format: " + (err as Error).message);
+      const success = handleFileImport(content, excalidrawAPI);
+      if (!success) {
+        alert("Unrecognized file format");
       }
     };
     reader.readAsText(file);
@@ -215,6 +167,7 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
           username={username}
           isAuthenticated={isAuthenticated}
           onRegenerateRoomId={() => regenerateRoomId(roomId)}
+          onOpenSettings={onOpenRoomSettings}
         />
 
         {/* Import/Export Section */}
@@ -254,7 +207,16 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
                 }`}
               >
                 <FileJson size={16} />
-                <span>Export JSON</span>
+                <span>Export Sheet (.excalidraw)</span>
+              </button>
+              <button
+                onClick={handleExportAllSheets}
+                className={`flex items-center gap-3 px-4 py-2.5 w-full text-left text-sm border-b ${
+                  theme === "dark" ? "hover:bg-gray-700 text-gray-200 border-gray-700" : "hover:bg-gray-100 text-gray-700 border-gray-100"
+                }`}
+              >
+                <Files size={16} />
+                <span>Export File (all sheets)</span>
               </button>
               <button
                 onClick={handleExportPNG}
@@ -278,39 +240,44 @@ export default function Toolbar({ excalidrawAPI, onToggleSidebar, username = "Gu
           </div>
         </div>
 
-        {/* Auth Button */}
-        {isAuthenticated ? (
-          <div className="flex items-center gap-1">
-            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-sm ${
-              theme === "dark" ? "bg-gray-700 text-gray-300" : "bg-gray-100 text-gray-700"
-            }`}>
-              <User size={14} />
-              <span className="text-xs max-w-20 truncate">{username}</span>
-            </div>
-            <button
-              onClick={onLogout}
-              className={`p-2 rounded-lg transition-colors ${
-                theme === "dark" ? "hover:bg-gray-700 text-gray-300" : "hover:bg-gray-100 text-gray-600"
-              }`}
-              title="Sign out"
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
-        ) : (
+        {/* Cloud Save/Load Section */}
+        <div className={`flex items-center gap-1 border-l pl-2 ${
+          theme === "dark" ? "border-gray-700" : "border-gray-200"
+        }`}>
           <button
-            onClick={onOpenAuth}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
-              theme === "dark"
-                ? "bg-blue-600 hover:bg-blue-700 text-white"
-                : "bg-blue-600 hover:bg-blue-700 text-white"
-            }`}
-            title="Sign in"
+            onClick={onSaveToCloud || handleSaveToCloud}
+            disabled={isSaving || !roomId}
+            className={`p-2 rounded-lg transition-colors ${
+              theme === "dark" 
+                ? "hover:bg-gray-700 text-gray-300 disabled:text-gray-600" 
+                : "hover:bg-gray-100 text-gray-600 disabled:text-gray-300"
+            } disabled:cursor-not-allowed`}
+            title="Save to cloud"
           >
-            <LogIn size={16} />
-            <span className="hidden sm:inline">Sign In</span>
+            {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
           </button>
-        )}
+          <button
+            onClick={handleLoadFromCloud}
+            disabled={isLoading || !roomId}
+            className={`p-2 rounded-lg transition-colors ${
+              theme === "dark" 
+                ? "hover:bg-gray-700 text-gray-300 disabled:text-gray-600" 
+                : "hover:bg-gray-100 text-gray-600 disabled:text-gray-300"
+            } disabled:cursor-not-allowed`}
+            title="Load from cloud"
+          >
+            {isLoading ? <Loader2 size={18} className="animate-spin" /> : <FolderOpen size={18} />}
+          </button>
+          {saveStatus && (
+            <span className={`text-xs px-2 py-1 rounded ${
+              saveStatus.includes("failed") 
+                ? "text-red-500" 
+                : theme === "dark" ? "text-green-400" : "text-green-600"
+            }`}>
+              {saveStatus}
+            </span>
+          )}
+        </div>
 
         {/* Theme Toggle */}
         <button

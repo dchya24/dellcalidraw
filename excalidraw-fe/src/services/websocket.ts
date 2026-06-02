@@ -1,4 +1,5 @@
 import { WSMessage } from '../types/websocket';
+import { importRoomKey, seal, open, type EncryptedEnvelope } from './cryptoService';
 
 export interface WSConfig {
   url: string;
@@ -54,6 +55,15 @@ class WebSocketService {
   // Connection state
   private connectionState: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' = 'disconnected';
 
+  // Phase 11–12: per-room AES-GCM encryption.
+  // The key is delivered by the server in `encryption_handshake` right
+  // after a successful `join_room`. While set, all outbound messages are
+  // wrapped and all inbound `encrypted` envelopes are unwrapped. Inbound
+  // decryption is async, so we serialize message handling on a promise
+  // chain to preserve server send order.
+  private encryptionKey: CryptoKey | null = null;
+  private inboundChain: Promise<void> = Promise.resolve();
+
   /**
    * Connect to WebSocket server with enhanced features
    */
@@ -96,13 +106,8 @@ class WebSocketService {
         };
 
         this.ws.onmessage = (event) => {
-          try {
-            const message: WSMessage = JSON.parse(event.data);
-            this.handleMessage(message);
-          } catch (error) {
-            console.error('[WebSocket] Failed to parse message:', error);
-            this.notifyError(new Error('Failed to parse WebSocket message'));
-          }
+          // Serialize inbound handling so async decryption preserves order.
+          this.inboundChain = this.inboundChain.then(() => this.processInbound(event.data));
         };
 
         this.ws.onerror = (error) => {
@@ -122,6 +127,10 @@ class WebSocketService {
           });
 
           this.stopHeartbeat();
+          // Drop the room key: the server will re-deliver it on next
+          // join_room after reconnect. Keeping a stale key would leak
+          // ciphertext we can't decrypt anyway.
+          this.encryptionKey = null;
           this.connectionState = 'disconnected';
           this.notifyConnectionChange(false);
 
@@ -136,6 +145,55 @@ class WebSocketService {
         reject(error);
       }
     });
+  }
+
+  /**
+   * Process a raw inbound frame: unwrap encryption if needed, then
+   * dispatch via handleMessage. Runs serially via this.inboundChain.
+   */
+  private async processInbound(raw: string): Promise<void> {
+    let message: WSMessage;
+    try {
+      message = JSON.parse(raw);
+    } catch (error) {
+      console.error('[WebSocket] Failed to parse message:', error);
+      this.notifyError(new Error('Failed to parse WebSocket message'));
+      return;
+    }
+
+    if (message.type === 'encryption_handshake') {
+      const payload = message.payload as { roomId?: string; key?: string } | undefined;
+      if (!payload?.key) {
+        console.warn('[WebSocket] encryption_handshake missing key');
+        return;
+      }
+      try {
+        this.encryptionKey = await importRoomKey(payload.key);
+        console.log('🔐 [WebSocket] Encryption armed', { roomId: payload.roomId });
+      } catch (err) {
+        console.error('[WebSocket] Failed to import room key:', err);
+        this.notifyError(new Error('Failed to import room encryption key'));
+      }
+      return;
+    }
+
+    if (message.type === 'encrypted') {
+      if (!this.encryptionKey) {
+        console.warn('[WebSocket] Received encrypted frame before key handshake');
+        return;
+      }
+      try {
+        const envelope = message.payload as EncryptedEnvelope;
+        const plain = await open(this.encryptionKey, envelope);
+        message = JSON.parse(plain);
+      } catch (err) {
+        console.error('[WebSocket] Failed to decrypt frame:', err);
+        this.notifyError(new Error('Failed to decrypt WebSocket frame'));
+        return;
+      }
+    }
+
+    this.handleMessage(message);
   }
 
   /**
@@ -274,16 +332,48 @@ class WebSocketService {
       return false;
     }
 
-    try {
-      const message = JSON.stringify({ type, payload });
-      this.ws!.send(message);
-      return true;
-    } catch (error) {
-      console.error('[WebSocket] Failed to send message:', error);
-      // Queue for retry
-      this.queueMessage(type, payload);
-      return false;
+    // Heartbeat and the join_room handshake travel plaintext: 'pong'
+    // and 'ping' are control replies, and 'join_room' must reach the
+    // server before the key exists. Everything else is encrypted once
+    // the key is set.
+    const skipEncryption =
+      this.encryptionKey === null ||
+      type === 'ping' ||
+      type === 'pong' ||
+      type === 'join_room';
+
+    if (skipEncryption) {
+      try {
+        const message = JSON.stringify({ type, payload });
+        this.ws!.send(message);
+        return true;
+      } catch (error) {
+        console.error('[WebSocket] Failed to send message:', error);
+        this.queueMessage(type, payload);
+        return false;
+      }
     }
+
+    // Encrypted path — fire-and-forget. WebCrypto is async, so we hand
+    // the work off and treat the message as accepted. If sealing fails
+    // we surface an error but do not retry: the contents may be
+    // user-driven (cursor, selection) and stale by the time we recover.
+    const ws = this.ws!;
+    const key = this.encryptionKey!;
+    seal(key, JSON.stringify({ type, payload }))
+      .then((envelope) => {
+        try {
+          ws.send(JSON.stringify({ type: 'encrypted', payload: envelope }));
+        } catch (error) {
+          console.error('[WebSocket] Failed to send encrypted frame:', error);
+          this.notifyError(new Error('Failed to send encrypted message'));
+        }
+      })
+      .catch((error) => {
+        console.error('[WebSocket] Failed to seal frame:', error);
+        this.notifyError(new Error('Failed to encrypt message'));
+      });
+    return true;
   }
 
   /**

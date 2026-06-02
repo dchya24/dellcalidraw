@@ -1,5 +1,395 @@
 # Whiteboard Project - Phase Summary
 
+## ✅ Phase 12: Auto-Refresh JWT Tokens & Password Reset Flow Completed
+**Date:** 2026-05-12
+
+### 🛠 Features Implemented
+
+#### 1. Database Schema (`internal/database/migrations/000005_password_reset.up.sql`)
+- `password_reset_tokens` table: UUID PK, user FK, token, expires_at, used_at
+- Indexes on token and user_id for fast lookups
+- Automatic cleanup of expired/used tokens
+
+#### 2. Password Reset Repository (`internal/database/password_reset.go`)
+- `CreatePasswordResetToken()` - Generate secure 64-char hex token with 1-hour expiry
+- `GetPasswordResetToken()` - Retrieve token by token string
+- `UsePasswordResetToken()` - Mark token as used (single-use)
+- `UpdateUserPassword()` - Update user's hashed password
+- `CleanExpiredPasswordResetTokens()` - Cleanup expired tokens
+- Automatic invalidation of existing tokens when creating new one
+
+#### 3. Password Reset HTTP Handlers (`cmd/server/auth_handlers.go`)
+- **POST `/api/auth/forgot-password`** - Initiate password reset
+  - Accepts email, creates reset token
+  - Returns success even if email not found (prevents enumeration)
+  - Logs reset URL for development (production: send email)
+- **POST `/api/auth/validate-reset-token`** - Validate reset token
+  - Returns validity, masked email, expiry time
+  - Checks if token is used or expired
+- **POST `/api/auth/reset-password`** - Complete password reset
+  - Validates token, updates password with bcrypt
+  - Marks token as used
+  - Revokes all existing refresh tokens for security
+
+#### 4. Token Refresh Service (`src/services/tokenRefreshService.ts`)
+- Automatic token refresh 2 minutes before expiry
+- Periodic check every 30 seconds
+- JWT expiry extraction from token payload
+- `start()` / `stop()` lifecycle methods
+- `forceRefresh()` for manual refresh
+- `getTimeUntilExpiry()` / `isTokenExpired()` helpers
+- Automatic auth clear on refresh failure
+
+#### 5. API Service Extensions (`src/services/api.ts`)
+- `forgotPassword(email)` - Request password reset
+- `validateResetToken(token)` - Check token validity
+- `resetPassword(token, newPassword)` - Complete reset
+
+#### 6. Forgot Password Modal (`src/components/ForgotPasswordModal.tsx`)
+- Email input with validation
+- Success state with "Check Your Email" message
+- Error handling with user-friendly messages
+- "Back to Sign In" navigation
+- Dark/light mode support
+
+#### 7. Reset Password Modal (`src/components/ResetPasswordModal.tsx`)
+- Token validation on mount with loading state
+- Invalid/expired token error display
+- New password + confirm password inputs
+- Password validation (min 8 characters, match)
+- Success state with "Sign In" redirect
+- Dark/light mode support
+
+#### 8. Auth Modal Update (`src/components/AuthModal.tsx`)
+- Added "Forgot password?" link on login form
+- `onForgotPassword` callback prop
+
+#### 9. App Integration (`src/App.tsx`)
+- Token refresh service start/stop based on auth state
+- Password reset token detection from URL
+- Modal state management for forgot/reset password
+- Navigation flow between auth modals
+
+### 🧠 Technical Decisions & Challenges
+
+**Decision 1: Token Refresh Timing**
+- Refresh 2 minutes before expiry (configurable)
+- Check every 30 seconds (balance between responsiveness and overhead)
+- Extract expiry from JWT payload (no server call needed)
+
+**Decision 2: Password Reset Security**
+- 64-character hex tokens (32 bytes random)
+- 1-hour expiration (short window for security)
+- Single-use tokens (marked as used after reset)
+- Revoke all refresh tokens after password change
+- Don't reveal if email exists (prevent enumeration)
+
+**Decision 3: Masked Email Display**
+- Show `j***@example.com` format on reset page
+- Confirms correct account without full exposure
+
+**Decision 4: Graceful Token Refresh Failure**
+- If refresh fails with "invalid" error, clear auth
+- User redirected to login naturally
+- No jarring error messages
+
+### 📊 Comparison: Before vs After
+
+| Feature | Before (Phase 11) | After (Phase 12) |
+|---------|-------------------|-------------------|
+| Token Refresh | ❌ Manual only | ✅ Auto 2min before expiry |
+| Refresh Check | ❌ None | ✅ Every 30 seconds |
+| Forgot Password | ❌ None | ✅ Email-based flow |
+| Reset Token | ❌ None | ✅ 1-hour secure token |
+| Password Update | ❌ None | ✅ With token validation |
+| Token Revocation | ❌ None | ✅ On password reset |
+| Email Masking | ❌ N/A | ✅ j***@example.com |
+
+### 📁 Files Created
+
+**Backend (Go):**
+- `excalidraw-be/internal/database/migrations/000005_password_reset.up.sql`
+- `excalidraw-be/internal/database/migrations/000005_password_reset.down.sql`
+- `excalidraw-be/internal/database/password_reset.go`
+
+**Frontend (React):**
+- `excalidraw-fe/src/services/tokenRefreshService.ts`
+- `excalidraw-fe/src/components/ForgotPasswordModal.tsx`
+- `excalidraw-fe/src/components/ResetPasswordModal.tsx`
+
+### 📁 Files Modified
+
+**Backend (Go):**
+- `excalidraw-be/cmd/server/auth_handlers.go` - Added password reset handlers
+- `excalidraw-be/cmd/server/main.go` - Added password reset routes
+
+**Frontend (React):**
+- `excalidraw-fe/src/services/api.ts` - Added password reset API methods
+- `excalidraw-fe/src/components/AuthModal.tsx` - Added forgot password link
+- `excalidraw-fe/src/App.tsx` - Integrated token refresh and password reset modals
+
+### ✅ Build Verification
+
+- ✅ Backend: `go build ./cmd/server` passes
+- ✅ Backend: `go vet ./...` passes
+- ✅ Backend: `go fmt ./...` passes
+- ✅ Frontend: `npm run build` passes
+- ✅ No Go compilation errors
+- ✅ No TypeScript errors
+
+### ⏭️ Next Steps
+
+- **Phase 13**: Email Service Integration (SendGrid/SES for actual emails)
+- Remember me functionality (extended token TTL)
+- Change password (while logged in)
+- Account deletion
+- Two-factor authentication (2FA)
+- Session management (view/revoke active sessions)
+
+---
+
+## ✅ Phase 11: Advanced Room Features (Password, Roles, Permissions) Completed
+**Date:** 2026-05-12
+
+### 🛠 Features Implemented
+
+#### 1. Database Schema (`internal/database/migrations/000004_room_permissions.up.sql`)
+- `rooms` table extended with: `owner_id`, `password_hash`, `is_public`, `allow_anonymous`
+- `room_members` table: UUID PK, room FK, user FK, role (owner/editor/viewer), invited_by
+- `room_invitations` table: UUID PK, room FK, email, role, token, expires_at, used_at
+- Indexes for fast lookups on room_id, user_id, token, email
+
+#### 2. Room Permissions Repository (`internal/database/room_permissions.go`)
+- `SetRoomPassword()` / `VerifyRoomPassword()` / `RemoveRoomPassword()` - bcrypt password protection
+- `HasRoomPassword()` - Check if room requires password
+- `SetRoomOwner()` / `GetRoomOwner()` - Room ownership management
+- `GetRoomSettings()` / `UpdateRoomSettings()` - Public/anonymous settings
+- `AddRoomMember()` / `GetRoomMember()` / `GetRoomMembers()` - Member management
+- `UpdateRoomMemberRole()` / `RemoveRoomMember()` - Role updates
+- `GetUserRole()` - Get user's role in a room
+- `CreateRoomInvitation()` / `GetRoomInvitationByToken()` / `UseRoomInvitation()` - Invitation system
+- `GetRoomInvitations()` / `DeleteRoomInvitation()` - Invitation management
+- `CanUserPerformAction()` - Permission checking (view, edit, manage_members, change_settings, delete_room)
+
+#### 3. WebSocket Permission Handlers (`internal/websocket/handler_permissions.go`)
+- `handleJoinRoomWithPassword()` - Join with optional password verification
+- `handleGetRoomSettings()` - Get room settings and user's role
+- `handleSetRoomPassword()` - Set/remove room password (owner only)
+- `handleUpdateRoomSettings()` - Update public/anonymous settings (owner only)
+- `handleGetRoomMembers()` - List room members with roles
+- `handleUpdateMemberRole()` - Change member role (owner only)
+- `handleRemoveMember()` - Remove member from room
+- `handleCreateInvitation()` - Create invitation link (owner only)
+- `handleAcceptInvitation()` - Accept invitation and join as member
+- `handleGetInvitations()` / `handleDeleteInvitation()` - Manage invitations
+- `checkEditPermission()` - Permission check for element updates
+
+#### 4. WebSocket Message Types (`internal/websocket/types.go`)
+- `JoinRoomWithPasswordPayload` - Join with password
+- `RoomSettingsPayload` - Room settings response
+- `SetRoomPasswordPayload` / `UpdateRoomSettingsPayload` - Settings updates
+- `RoomMemberPayload` / `RoomMembersListPayload` - Member data
+- `UpdateMemberRolePayload` / `RemoveMemberPayload` - Member management
+- `CreateInvitationPayload` / `InvitationPayload` / `InvitationsListPayload` - Invitations
+- `PermissionDeniedPayload` / `PasswordRequiredPayload` - Error responses
+
+#### 5. Database Adapter (`internal/websocket/db_adapter.go`)
+- `DBClientAdapter` implements `DBClient` interface
+- Bridges `database.PostgresClient` to WebSocket handler
+- Type conversions between database and WebSocket types
+
+#### 6. Frontend Types (`src/types/roomPermissions.ts`)
+- `RoomRole` type: 'owner' | 'editor' | 'viewer'
+- `RoomSettings`, `RoomMember`, `RoomInvitation` interfaces
+- WebSocket payload types for all permission operations
+
+#### 7. Frontend Service (`src/services/roomPermissionsService.ts`)
+- `getRoomSettings()` / `setRoomPassword()` / `updateRoomSettings()`
+- `getRoomMembers()` / `updateMemberRole()` / `removeMember()`
+- `createInvitation()` / `acceptInvitation()` / `getInvitations()` / `deleteInvitation()`
+- `joinRoomWithPassword()` - Join password-protected room
+- Event listeners for settings, members, invitations, permission denied, password required
+
+#### 8. Room Settings Panel (`src/components/RoomSettingsPanel.tsx`)
+- Tabbed UI: Settings, Members, Invitations
+- Settings tab: Password protection toggle, public room toggle, allow anonymous toggle
+- Members tab: List members with roles, change role dropdown, remove member button
+- Invitations tab: Create invitation form, copy invite link, delete invitation
+- Role icons (Shield/Edit/Eye) for visual role indication
+- Dark/light mode support
+
+#### 9. Room Password Dialog (`src/components/RoomPasswordDialog.tsx`)
+- Modal dialog for password-protected rooms
+- Password input with validation
+- Join/Cancel buttons
+- Dark/light mode support
+
+#### 10. UI Integration
+- `CollaborationPanel.tsx` - Added Settings button when connected
+- `Toolbar.tsx` - Pass `onOpenRoomSettings` handler
+- `Whiteboard.tsx` - Room settings panel and password dialog integration
+- Permission denied toast notifications
+
+### 🧠 Technical Decisions & Challenges
+
+**Decision 1: First Authenticated User Becomes Owner**
+- When setting password or creating invitation, if no owner exists, the authenticated user becomes owner
+- Allows organic room ownership without explicit "create room" flow
+
+**Decision 2: Role Hierarchy**
+- Owner: Full control (settings, members, invitations, delete room)
+- Editor: Can edit elements (default for authenticated users)
+- Viewer: Read-only access
+- Anonymous: Depends on `allow_anonymous` setting
+
+**Decision 3: Graceful Degradation**
+- All permission features require database
+- Without database, rooms work as before (open, no permissions)
+- Permission checks return `true` by default if database unavailable
+
+**Decision 4: Invitation Token System**
+- 64-character hex tokens (32 bytes random)
+- 7-day expiration by default
+- Single-use (marked as used after acceptance)
+- Optional email association for tracking
+
+**Decision 5: Password Protection with bcrypt**
+- Room passwords hashed with bcrypt (DefaultCost)
+- Empty password removes protection
+- Password required before WebSocket join completes
+
+### 📊 Comparison: Before vs After
+
+| Feature | Before (Phase 10) | After (Phase 11) |
+|---------|-------------------|-------------------|
+| Room Password | ❌ None | ✅ bcrypt protected |
+| User Roles | ❌ None | ✅ Owner/Editor/Viewer |
+| Permission Checks | ❌ None | ✅ Role-based |
+| Room Settings | ❌ None | ✅ Public/Anonymous toggles |
+| Member Management | ❌ None | ✅ Add/Remove/Change role |
+| Invitations | ❌ None | ✅ Token-based with expiry |
+| Room Ownership | ❌ None | ✅ First auth user claims |
+| Settings UI | ❌ None | ✅ Tabbed panel |
+| Password Dialog | ❌ None | ✅ Modal on join |
+
+### 📁 Files Created
+
+**Backend (Go):**
+- `excalidraw-be/internal/database/migrations/000004_room_permissions.up.sql`
+- `excalidraw-be/internal/database/migrations/000004_room_permissions.down.sql`
+- `excalidraw-be/internal/database/room_permissions.go`
+- `excalidraw-be/internal/websocket/handler_permissions.go`
+- `excalidraw-be/internal/websocket/db_adapter.go`
+
+**Frontend (React):**
+- `excalidraw-fe/src/types/roomPermissions.ts`
+- `excalidraw-fe/src/services/roomPermissionsService.ts`
+- `excalidraw-fe/src/components/RoomSettingsPanel.tsx`
+- `excalidraw-fe/src/components/RoomPasswordDialog.tsx`
+
+### 📁 Files Modified
+
+**Backend (Go):**
+- `excalidraw-be/internal/websocket/handler.go` - Added DBClient, permission message routing, edit permission check
+- `excalidraw-be/internal/websocket/types.go` - Added Phase 11 message types
+- `excalidraw-be/cmd/server/main.go` - Wire up DBClientAdapter to Hub
+
+**Frontend (React):**
+- `excalidraw-fe/src/components/CollaborationPanel.tsx` - Added Settings button
+- `excalidraw-fe/src/components/Toolbar.tsx` - Added onOpenRoomSettings prop
+- `excalidraw-fe/src/components/Whiteboard.tsx` - Integrated settings panel and password dialog
+
+### ✅ Build Verification
+
+- ✅ Backend: `go build ./cmd/server` passes
+- ✅ Backend: `go vet ./...` passes
+- ✅ Backend: `go fmt ./...` passes
+- ✅ Frontend: `npm run build` passes
+- ✅ No Go compilation errors
+- ✅ No TypeScript errors
+
+### ⏭️ Next Steps
+
+- **Phase 12**: Room Templates & Presets
+- Auto-refresh JWT tokens before expiry
+- Password reset flow
+- Email notifications for invitations
+- Room deletion with confirmation
+- Transfer ownership feature
+- Audit log for room actions
+
+---
+
+## ✅ Phase 10.1: Frontend Auth UI Integration Completed
+**Date:** 2026-05-05
+
+### 🛠 Features Implemented
+
+#### 1. Auth Modal Component (`components/AuthModal.tsx`)
+- Login/Register form with modal UI
+- Form validation (username 3+, password 8+)
+- Error handling with user-friendly messages
+- Loading state with spinner
+- Toggle between login/register modes
+- Dark/light mode support
+
+#### 2. Auth Store (`store/useAuthStore.ts`)
+- Zustand store with persist middleware
+- User, tokens, authentication state
+- `setAuth()`, `setTokens()`, `clearAuth()`, `getAccessToken()`
+- localStorage persistence (`auth-storage`)
+
+#### 3. API Service (`services/api.ts`)
+- `register()`, `login()`, `refreshToken()`, `logout()`
+- Bearer token in Authorization header
+- AuthError class with codes: `email_taken`, `username_taken`, `invalid_credentials`
+
+#### 4. WebSocket Token Integration (`services/roomService.ts`)
+- JWT passed via `?token=<JWT>` query parameter
+- Token extracted from localStorage on connect
+- Authenticated users' identity carried into room join
+- Guest fallback for invalid/missing tokens
+
+#### 5. Toolbar Auth UI (`components/Toolbar.tsx`)
+- "Sign In" button when not authenticated
+- User badge + "Sign out" button when authenticated
+- Dark/light mode styled buttons
+
+#### 6. App Integration (`App.tsx`)
+- AuthModal open/close state management
+- `handleLogout()` calls logout API + clears tokens
+- Props passed to Whiteboard component
+
+### 📊 Comparison: Before vs After
+
+| Feature | Before | After |
+|---------|--------|-------|
+| Login/Register UI | ❌ None | ✅ Modal form |
+| Token Storage | Backend only | ✅ localStorage |
+| WebSocket Auth | Guest only | ✅ JWT token |
+| Logout API | Not called | ✅ Called on logout |
+| Auth State in UI | ❌ None | ✅ User badge |
+
+### 📁 Files Modified
+
+**Frontend:**
+- `src/App.tsx` - Logout calls API, imports apiService
+- `src/components/Toolbar.tsx` - Already had auth UI
+- `src/components/AuthModal.tsx` - Already implemented
+- `src/services/api.ts` - Already implemented
+- `src/store/useAuthStore.ts` - Already implemented
+- `src/services/roomService.ts` - Already passes token to WebSocket
+- `src/types/auth.ts` - Already has types
+
+### ⏭️ Next Steps
+
+- **Phase 11**: Advanced Room Features (password protection, roles, permissions)
+- Auto-refresh tokens before expiry
+- Remember me functionality
+- Password reset flow
+
+---
+
 ## ✅ Phase 10: User Authentication & Authorization Completed
 **Date:** 2026-04-21
 

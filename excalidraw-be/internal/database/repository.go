@@ -49,6 +49,37 @@ func (p *PostgresClient) GetOrCreateRoom(roomKey string) (string, error) {
 	return p.CreateRoom(roomKey, "")
 }
 
+// GetOrCreateRoomEncryptionKey returns the room's base64-encoded AES-256
+// key, generating one if the room does not yet have it. Used by the WS
+// handler to bootstrap encrypted message exchange. Caller passes a
+// generator function so this package does not depend on internal/crypto.
+func (p *PostgresClient) GetOrCreateRoomEncryptionKey(roomDBID string, gen func() (string, error)) (string, error) {
+	var key sql.NullString
+	err := p.db.QueryRow(
+		`SELECT encryption_key FROM rooms WHERE id = $1`, roomDBID,
+	).Scan(&key)
+	if err != nil {
+		return "", fmt.Errorf("fetch encryption_key: %w", err)
+	}
+	if key.Valid && key.String != "" {
+		return key.String, nil
+	}
+
+	newKey, err := gen()
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := p.db.Exec(
+		`UPDATE rooms SET encryption_key = $1 WHERE id = $2`,
+		newKey, roomDBID,
+	); err != nil {
+		return "", fmt.Errorf("persist encryption_key: %w", err)
+	}
+	slog.Info("Room encryption key generated", "roomDBID", roomDBID)
+	return newKey, nil
+}
+
 func (p *PostgresClient) BatchSaveElements(roomDBID string, updates []ElementUpdate) error {
 	if len(updates) == 0 {
 		return nil

@@ -11,7 +11,7 @@ class SelectionService {
   private remoteSelections: Map<string, ElementSelection> = new Map();
   private selectionListeners: Set<(selections: ElementSelection[]) => void> = new Set();
   private isTracking: boolean = false;
-  private updateInterval: number | null = null;
+  private updateInterval: ReturnType<typeof setInterval> | null = null;
 
   // Debounce to avoid excessive updates
   private pendingSelectionUpdate: Set<string> = new Set();

@@ -4,6 +4,7 @@
 
 # Binaries
 bin/
+server
 *.exe
 *.exe~
 *.dll

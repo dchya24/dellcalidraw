@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import debounce from "lodash.debounce";
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { Excalidraw, MainMenu } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import type {
   AppState,
@@ -15,14 +15,28 @@ import { roomService } from "../services/roomService";
 import { elementSyncService } from "../services/elementSyncService";
 import { cursorService } from "../services/cursorService";
 import { selectionService } from "../services/selectionService";
+import { roomPermissionsService } from "../services/roomPermissionsService";
+import { apiService } from "../services/api";
+import {
+  exportFileAllSheets,
+  exportActiveSheetJSON,
+  exportActiveSheetSVG,
+  importDellcalidrawAsNewFile,
+  parseImportData,
+  loadActiveSheetFromCloud,
+} from "../services/exportImportService";
 import TabBar from "./TabBar";
 import Toolbar from "./Toolbar";
 import ConfirmDialog from "./ConfirmDialog";
 import Sidebar from "./Sidebar";
 import RemoteCursors from "./RemoteCursors";
+import AIChatPanel from "./ai/AIChatPanel";
 import FloatingTab from "./FloatingTab";
 import RoomInviteDialog from "./RoomInviteDialog";
 import ConflictResolutionPanel from "./ConflictResolutionPanel";
+import RoomSettingsPanel from "./RoomSettingsPanel";
+import RoomPasswordDialog from "./RoomPasswordDialog";
+import { HardDriveDownload, LogIn, LogOut, Moon, Save, Sun, Files, FileType, FolderOpen, Download } from "lucide-react";
 
 interface WhiteboardProps {
   username: string;
@@ -31,10 +45,16 @@ interface WhiteboardProps {
   onLogout: () => void;
 }
 
-export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLogout }: WhiteboardProps) {
+export default function Whiteboard({
+  username,
+  isAuthenticated,
+  onOpenAuth,
+  onLogout,
+}: WhiteboardProps) {
   const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const applyingRemoteChangesRef = useRef(false); // Track when applying remote changes to prevent loops
   const isApplyingChangesRef = useRef(false); // Additional lock to prevent race conditions
+  const mainMenuFileInputRef = useRef<HTMLInputElement>(null);
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -43,15 +63,20 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
   const [floatingTabOpen, setFloatingTabOpen] = useState(false);
-  const [conflicts, setConflicts] = useState<Array<{
-    id: string;
-    userId: string;
-    username: string;
-    color: string;
-    timestamp: number;
-    description: string;
-    elementCount: number;
-  }>>([]);
+  const [conflicts, setConflicts] = useState<
+    Array<{
+      id: string;
+      userId: string;
+      username: string;
+      color: string;
+      timestamp: number;
+      description: string;
+      elementCount: number;
+    }>
+  >([]);
+  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [pendingPasswordRoomId, setPendingPasswordRoomId] = useState<string | null>(null);
   const {
     files,
     activeFileId,
@@ -131,12 +156,9 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
     [tabs, removeTab],
   );
 
-  const handleFloatingTabOpen = useCallback(
-    () => {
-      setFloatingTabOpen(!floatingTabOpen);
-    },
-    [setFloatingTabOpen, floatingTabOpen],
-  );
+  const handleFloatingTabOpen = useCallback(() => {
+    setFloatingTabOpen(!floatingTabOpen);
+  }, [setFloatingTabOpen, floatingTabOpen]);
 
   const handleDeleteConfirm = useCallback(() => {
     if (pendingDeleteId) {
@@ -249,13 +271,16 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
   // Helper function to convert backend element to Excalidraw format
   const convertBackendToExcalidraw = useCallback(
-    (backendEl: import('../types/websocket').ExcalidrawElementPayload): OrderedExcalidrawElement => {
+    (
+      backendEl: import("../types/websocket").ExcalidrawElementPayload,
+    ): OrderedExcalidrawElement => {
       // Generate required fields with defaults if missing
       const seed = backendEl.seed ?? Math.floor(Math.random() * 1000000);
       const version = backendEl.version ?? 1;
-      const versionNonce = backendEl.versionNonce ?? Math.floor(Math.random() * 1000000);
+      const versionNonce =
+        backendEl.versionNonce ?? Math.floor(Math.random() * 1000000);
       const updated = backendEl.updated ?? Date.now();
-      
+
       // Build the base element with all required properties
       const baseElement = {
         id: backendEl.id,
@@ -267,9 +292,11 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
         angle: backendEl.angle ?? 0,
         strokeColor: backendEl.strokeColor ?? "#000000",
         backgroundColor: backendEl.backgroundColor ?? "transparent",
-        fillStyle: (backendEl.fillStyle ?? "solid") as OrderedExcalidrawElement["fillStyle"],
+        fillStyle: (backendEl.fillStyle ??
+          "solid") as OrderedExcalidrawElement["fillStyle"],
         strokeWidth: backendEl.strokeWidth ?? 1,
-        strokeStyle: (backendEl.strokeStyle ?? "solid") as OrderedExcalidrawElement["strokeStyle"],
+        strokeStyle: (backendEl.strokeStyle ??
+          "solid") as OrderedExcalidrawElement["strokeStyle"],
         roughness: backendEl.roughness ?? 1,
         opacity: backendEl.opacity ?? 100,
         seed,
@@ -315,12 +342,12 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
       Object.entries(activeTab.data.files || {}).forEach(([key, value]) => {
         if (
-          typeof value === 'object' &&
+          typeof value === "object" &&
           value !== null &&
-          'mimeType' in value &&
-          'id' in value &&
-          'dataURL' in value &&
-          'created' in value
+          "mimeType" in value &&
+          "id" in value &&
+          "dataURL" in value &&
+          "created" in value
         ) {
           const fileValue = value as Record<string, unknown>;
           const mimeType = String(fileValue.mimeType);
@@ -375,11 +402,11 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
     // Auto-join if room is in URL query parameter
     const urlParams = new URLSearchParams(window.location.search);
-    const urlRoomId = urlParams.get('room');
+    const urlRoomId = urlParams.get("room");
     if (urlRoomId && urlRoomId === roomId) {
-      console.log('🔗 Auto-joining room from URL:', roomId);
+      console.log("🔗 Auto-joining room from URL:", roomId);
       roomService.joinRoom(roomId, username).catch((error) => {
-        console.error('❌ Failed to auto-join room:', error);
+        console.error("❌ Failed to auto-join room:", error);
       });
     }
 
@@ -506,7 +533,7 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
       // Get participant info for conflict tracking
       const participants = roomService.getParticipants();
-      const participant = participants.find(p => p.id === payload.userId);
+      const participant = participants.find((p) => p.id === payload.userId);
       const username = participant?.username || "Unknown";
       const color = participant?.color || "#888888";
 
@@ -518,17 +545,21 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
       // Show conflict warning toast
       if (payload.userId) {
-        setConflictWarning(`${username} just made changes (${totalChanged} elements)`);
+        setConflictWarning(
+          `${username} just made changes (${totalChanged} elements)`,
+        );
         setTimeout(() => setConflictWarning(null), 3000);
 
         // Add to conflicts list
         const conflictId = `${payload.userId}-${Date.now()}`;
         const changeDescriptions: string[] = [];
         if (addedCount > 0) changeDescriptions.push(`added ${addedCount}`);
-        if (updatedCount > 0) changeDescriptions.push(`updated ${updatedCount}`);
-        if (deletedCount > 0) changeDescriptions.push(`deleted ${deletedCount}`);
+        if (updatedCount > 0)
+          changeDescriptions.push(`updated ${updatedCount}`);
+        if (deletedCount > 0)
+          changeDescriptions.push(`deleted ${deletedCount}`);
 
-        setConflicts(prev => {
+        setConflicts((prev) => {
           // Keep only last 10 conflicts to prevent UI overflow
           const newConflicts = [
             {
@@ -602,6 +633,7 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
   const handleAddTab = useCallback(() => {
     const api = excalidrawAPIRef.current;
+    console.log('api', api)
     if (!api) return;
 
     const elements = api.getSceneElements();
@@ -610,7 +642,6 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { collaborators, ...safeAppState } = appState;
     saveTabState(activeTabId, elements, safeAppState, files);
-
     addTab();
 
     api.updateScene({ elements: [] });
@@ -627,6 +658,7 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
       const jsonFile = files.find(
         (f) =>
           f.name.endsWith(".excalidraw") ||
+          f.name.endsWith(".dellcalidraw") ||
           f.name.endsWith(".json") ||
           f.type === "application/json",
       );
@@ -634,14 +666,20 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
       if (jsonFile) {
         try {
           const text = await jsonFile.text();
-          const data = JSON.parse(text);
+          const api = excalidrawAPIRef.current;
+          if (!api) return;
 
-          // Handle both single tab and multi-file formats
-          if (data.type === "excalidraw" && data.elements) {
-            // Single tab format (native Excalidraw)
-            const api = excalidrawAPIRef.current;
-            if (api) {
-              // Save current state first
+          const result = parseImportData(text);
+
+          switch (result.format) {
+            case "dellcalidraw":
+              // Multi-sheet: import as new file
+              await importDellcalidrawAsNewFile(result.data, api);
+              break;
+
+            case "excalidraw":
+            case "elements": {
+              // Single scene: save current state, create new tab, load there
               const currentElements = api.getSceneElements();
               const currentAppState = api.getAppState();
               const currentFiles = api.getFiles();
@@ -654,22 +692,21 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
                 currentFiles,
               );
 
-              // Create new tab with imported data
               addTab();
 
+              const elements = result.format === "excalidraw"
+                ? (result.data.elements || [])
+                : result.data;
               api.updateScene({
-                elements: data.elements || [],
-                appState: data.appState || {},
+                elements: elements as Parameters<typeof api.updateScene>[0]["elements"],
               });
               api.history.clear();
+              break;
             }
-          } else if (data.tabs && Array.isArray(data.tabs)) {
-            // Multi-tab format (our custom format)
-            const { loadFromFile } = useWhiteboardStore.getState();
-            loadFromFile({
-              tabs: data.tabs,
-              activeTabId: data.activeTabId || data.tabs[0]?.id,
-            });
+
+            case "unknown":
+              alert("Failed to import file. Unrecognized format.");
+              break;
           }
         } catch (error) {
           console.error("Failed to import file:", error);
@@ -692,15 +729,15 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
 
   // Track mouse position for cursor sync
   useEffect(() => {
-    const container = document.querySelector('.excalidraw-container');
+    const container = document.querySelector(".excalidraw-container");
     if (!container) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       mousePositionRef.current = { x: e.clientX, y: e.clientY };
     };
 
-    container.addEventListener('mousemove', handleMouseMove);
-    return () => container.removeEventListener('mousemove', handleMouseMove);
+    container.addEventListener("mousemove", handleMouseMove);
+    return () => container.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
   useEffect(() => {
@@ -710,12 +747,16 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
     cursorService.startTracking(() => {
       const appState = excalidrawAPI.getAppState();
       const zoom = appState.zoom?.value || 1;
-      
+
       // Transform screen coordinates to canvas coordinates
       // This is what we send to other users
-      const canvasX = (mousePositionRef.current.x - appState.offsetLeft - appState.scrollX) / zoom;
-      const canvasY = (mousePositionRef.current.y - appState.offsetTop - appState.scrollY) / zoom;
-      
+      const canvasX =
+        (mousePositionRef.current.x - appState.offsetLeft - appState.scrollX) /
+        zoom;
+      const canvasY =
+        (mousePositionRef.current.y - appState.offsetTop - appState.scrollY) /
+        zoom;
+
       return {
         x: canvasX,
         y: canvasY,
@@ -739,8 +780,8 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
       const idsArray = Array.isArray(selectedElementIds)
         ? selectedElementIds
         : selectedElementIds
-        ? Object.keys(selectedElementIds)
-        : [];
+          ? Object.keys(selectedElementIds)
+          : [];
       selectionService.updateSelection(idsArray);
     }, 200); // Check every 200ms
 
@@ -749,6 +790,69 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
     };
   }, [excalidrawAPI, isReady, roomId]);
 
+  // Handle password required for room join
+  useEffect(() => {
+    const unsubscribe = roomPermissionsService.onPasswordRequired((roomId) => {
+      console.log("🔐 Password required for room:", roomId);
+      setPendingPasswordRoomId(roomId);
+      setPasswordDialogOpen(true);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Handle permission denied
+  useEffect(() => {
+    const unsubscribe = roomPermissionsService.onPermissionDenied((payload) => {
+      console.warn("🚫 Permission denied:", payload.action, payload.message);
+      setConflictWarning(`Permission denied: ${payload.message}`);
+      setTimeout(() => setConflictWarning(null), 5000);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Handle password submit
+  const handlePasswordSubmit = useCallback((password: string) => {
+    if (!pendingPasswordRoomId) return;
+
+    console.log("🔑 Submitting password for room:", pendingPasswordRoomId);
+    roomPermissionsService.joinRoomWithPassword(pendingPasswordRoomId, username, password);
+    setPasswordDialogOpen(false);
+    setPendingPasswordRoomId(null);
+  }, [pendingPasswordRoomId, username]);
+
+  // Handle password cancel
+  const handlePasswordCancel = useCallback(() => {
+    setPasswordDialogOpen(false);
+    setPendingPasswordRoomId(null);
+  }, []);
+
+  // Handle open room settings
+  const handleOpenRoomSettings = useCallback(() => {
+    setRoomSettingsOpen(true);
+  }, []);
+
+  // Handle save canvas to cloud
+  const handleSaveToCloud = useCallback(async () => {
+    if (!roomId || !excalidrawAPI) {
+      console.warn("Cannot save: no room ID or Excalidraw API");
+      return;
+    }
+
+    try {
+      // Get current elements from Excalidraw
+      const elements = excalidrawAPI.getSceneElements();
+      console.log("💾 Saving canvas to cloud, elements count:", elements.length);
+
+      // Call the API endpoint to save
+      const response = await apiService.saveCanvas(roomId);
+      console.log("✅ Canvas saved:", response);
+    } catch (error) {
+      console.error("❌ Failed to save canvas to cloud:", error);
+    }
+  }, [roomId, excalidrawAPI]);
+
   if (!isReady) {
     return (
       <div className="w-screen h-screen flex items-center justify-center">
@@ -756,6 +860,87 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
       </div>
     );
   }
+  const handleExportJSON = () => {
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+    exportFileAllSheets(api);
+  };
+
+  const handleExportSheet = () => {
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+    exportActiveSheetJSON(api);
+  };
+
+  const handleExportSVG = async () => {
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+    await exportActiveSheetSVG(api);
+  };
+
+  const handleLoadFromCloud = async () => {
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+    const result = await loadActiveSheetFromCloud(api, apiService);
+    if (result.error) {
+      console.warn("Load from cloud:", result.error);
+    }
+  };
+
+  // File input ref for MainMenu import
+
+  const handleMainMenuImport = () => {
+    mainMenuFileInputRef.current?.click();
+  };
+
+  const handleMainMenuFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const api = excalidrawAPIRef.current;
+    if (!api) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const result = parseImportData(content);
+
+      switch (result.format) {
+        case "dellcalidraw":
+          importDellcalidrawAsNewFile(result.data, api);
+          break;
+        case "excalidraw": {
+          const { loadNativeExcalidraw } = useWhiteboardStore.getState();
+          const elements = result.data.elements || [];
+          const appState = result.data.appState || {};
+          const files = result.data.files || {};
+          loadNativeExcalidraw(
+            elements as Parameters<typeof loadNativeExcalidraw>[0],
+            appState,
+            files
+          );
+          api.updateScene({ elements: elements as Parameters<typeof api.updateScene>[0]["elements"] });
+          api.history.clear();
+          break;
+        }
+        case "elements": {
+          const { loadNativeExcalidraw } = useWhiteboardStore.getState();
+          loadNativeExcalidraw(
+            result.data as Parameters<typeof loadNativeExcalidraw>[0],
+            {},
+            {}
+          );
+          api.updateScene({ elements: result.data as Parameters<typeof api.updateScene>[0]["elements"] });
+          api.history.clear();
+          break;
+        }
+        case "unknown":
+          alert("Unrecognized file format");
+          break;
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
 
   return (
     <div
@@ -763,28 +948,36 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      {/* Hidden file input for MainMenu import */}
+      <input
+        type="file"
+        ref={mainMenuFileInputRef}
+        onChange={handleMainMenuFileChange}
+        accept=".excalidraw,.dellcalidraw,.json"
+        className="hidden"
+      />
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} excalidrawAPI={excalidrawAPI} />
 
       <div className="flex-1 relative z-0">
-        <Toolbar
-          excalidrawAPI={excalidrawAPI}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          username={username}
-          isAuthenticated={isAuthenticated}
-          onOpenAuth={onOpenAuth}
-          onLogout={onLogout}
-        />
-
-        {
-          floatingTabOpen && (
-            <FloatingTab
-              tabs={tabs}
-              activeTabId={activeTabId}
-              onTabChange={handleTabChange}
-              onDeleteRequest={handleDeleteRequest}
-            />
-          )
+        {import.meta.env.SHOW_TOOLBAR &&
+          <Toolbar
+            excalidrawAPI={excalidrawAPI}
+            onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+            username={username}
+            isAuthenticated={isAuthenticated}
+            onOpenRoomSettings={handleOpenRoomSettings}
+            onSaveToCloud={handleSaveToCloud}
+          />
         }
+
+        {floatingTabOpen && (
+          <FloatingTab
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onTabChange={handleTabChange}
+            onDeleteRequest={handleDeleteRequest}
+          />
+        )}
 
         {/* Sync Status Indicator */}
         {conflictWarning && (
@@ -811,25 +1004,117 @@ export default function Whiteboard({ username, isAuthenticated, onOpenAuth, onLo
           excalidrawAPI={handleAPIReady}
           onChange={handleChange}
           initialData={getInitialData()}
-        />
+          theme={theme}
+        >
+          <MainMenu>
+            <MainMenu.Group>
+              <MainMenu.DefaultItems.LoadScene />
+              <MainMenu.Item
+                icon={<Download size={16} />}
+                onClick={handleMainMenuImport}
+              >
+                Import File
+              </MainMenu.Item>
+              <MainMenu.Item
+                icon={<HardDriveDownload size={16} />}
+                onClick={handleExportSheet}
+              >
+                Export Sheet (.excalidraw)
+              </MainMenu.Item>
+              <MainMenu.Item
+                icon={<Files size={16} />}
+                onClick={handleExportJSON}
+              >
+                Export File (all sheets)
+              </MainMenu.Item>
+              <MainMenu.DefaultItems.SaveAsImage />
+              <MainMenu.Item
+                icon={<FileType size={16} />}
+                onClick={handleExportSVG}
+              >
+                Export SVG
+              </MainMenu.Item>
+            </MainMenu.Group>
+            <MainMenu.Group>
+              <MainMenu.Item
+                icon={<Save size={16} />}
+                onClick={handleSaveToCloud}
+              >
+                Save To Cloud
+              </MainMenu.Item>
+              <MainMenu.Item
+                icon={<FolderOpen size={16} />}
+                onClick={handleLoadFromCloud}
+              >
+                Load From Cloud
+              </MainMenu.Item>
+            </MainMenu.Group>
+            <MainMenu.Group>
+              <MainMenu.DefaultItems.SearchMenu />
+              <MainMenu.Item
+                icon={theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                onClick={toggleTheme}
+              >
+                {theme === "dark" ? "Light" : "Dark"} Theme
+              </MainMenu.Item>
+            </MainMenu.Group>
+            <MainMenu.Group>
+              {isAuthenticated ? (
+                <MainMenu.Item
+                  icon={<LogOut size={16} />}
+                  onClick={onLogout}
+                >
+                  Sign Out
+                </MainMenu.Item>
+              ) : (
+                <MainMenu.Item
+                  icon={<LogIn size={16} />}
+                  onClick={onOpenAuth}
+                >
+                  Sign In
+                </MainMenu.Item>
+              )}
+            </MainMenu.Group>
+          </MainMenu>
+        </Excalidraw>
+        {isAuthenticated &&
+          <AIChatPanel excalidrawAPI={excalidrawAPI} />
+        }
         <RemoteCursors excalidrawAPI={excalidrawAPI} />
-
         {/* Conflict Resolution Panel */}
         <ConflictResolutionPanel
           conflicts={conflicts}
-          onDismiss={(id) => setConflicts(prev => prev.filter(c => c.id !== id))}
+          onDismiss={(id) =>
+            setConflicts((prev) => prev.filter((c) => c.id !== id))
+          }
           onDismissAll={() => setConflicts([])}
         />
 
         {/* Room Invite Dialog */}
         <RoomInviteDialog username={username} />
 
+        {/* Room Settings Panel */}
+        <RoomSettingsPanel
+          roomId={roomId || ""}
+          isOpen={roomSettingsOpen}
+          onClose={() => setRoomSettingsOpen(false)}
+        />
+
+        {/* Room Password Dialog */}
+        <RoomPasswordDialog
+          roomId={pendingPasswordRoomId || ""}
+          isOpen={passwordDialogOpen}
+          onSubmit={handlePasswordSubmit}
+          onCancel={handlePasswordCancel}
+        />
       </div>
+
       <TabBar
         onTabChange={handleTabChange}
         onAddTab={handleAddTab}
         onDeleteRequest={handleDeleteRequest}
         handleFloatingTabOpen={handleFloatingTabOpen}
+        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
       />
       <ConfirmDialog
         isOpen={deleteDialogOpen}

@@ -115,8 +115,11 @@ jobs:
           DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          # Use printf to avoid adding an extra blank line; strip Windows CRs.
+          printf '%s' "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          # Verify key looks valid (should start with -----BEGIN)
+          head -1 ~/.ssh/id_rsa | grep -q 'BEGIN' || { echo '::error::SSH key does not look valid'; exit 1; }
           ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           # Ensure deploy directory exists on VPS (mkdir -p is idempotent)
           ssh -p "$VPS_PORT" -o StrictHostKeyChecking=no "${VPS_USER}@${VPS_HOST}" "mkdir -p ${DEPLOY_PATH}"

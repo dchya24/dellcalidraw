@@ -138,6 +138,11 @@ jobs:
             set -euo pipefail
             cd "$DEPLOY_PATH"
 
+            # Debug: verify image tags (secrets are masked by GitHub)
+            echo "BACKEND_IMAGE length: ${#BACKEND_IMAGE}"
+            echo "FRONTEND_IMAGE length: ${#FRONTEND_IMAGE}"
+            echo "GHCR_TOKEN set: $([ -n "${GHCR_TOKEN:-}" ] && echo yes || echo no)"
+
             # Render .env from GitHub Secrets
             cat > .env <<EOF
             # ---------- Image tags ----------
@@ -190,11 +195,9 @@ jobs:
             EOF
             chmod 600 .env
 
-            # Authenticate to GHCR (only needed if the package is private).
+            # Authenticate to GHCR — required for private packages.
             # GHCR_TOKEN is a PAT/classic with at least `read:packages`.
-            if [ -n "${GHCR_TOKEN:-}" ]; then
-              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            fi
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
             docker compose pull
             docker compose up -d --remove-orphans
@@ -202,16 +205,14 @@ jobs:
             # Drop dangling images to keep disk usage in check.
             docker image prune -f
 
-            if [ -n "${GHCR_TOKEN:-}" ]; then
-              docker logout ghcr.io || true
-            fi
+            docker logout ghcr.io || true
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
           DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-          # Image tags
-          BACKEND_IMAGE: ${{ secrets.BACKEND_IMAGE }}
-          FRONTEND_IMAGE: ${{ secrets.FRONTEND_IMAGE }}
+          # Image tags — derived from same registry/repo used in build step
+          BACKEND_IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_BE }}:latest
+          FRONTEND_IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_FE }}:latest
           # Ports
           BACKEND_PORT: ${{ secrets.BACKEND_PORT }}
           FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}

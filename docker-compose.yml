@@ -53,10 +53,12 @@ services:
       - EXCALIDRAW_EMAIL_SMTP_PASSWORD=${EXCALIDRAW_EMAIL_SMTP_PASSWORD}
       - EXCALIDRAW_EMAIL_SMTP_STARTTLS=${EXCALIDRAW_EMAIL_SMTP_STARTTLS:-true}
     # Optional: load additional/secret values from a backend-local file.
-    # Comment this out if you supply everything via the host environment
-    # or a secrets manager.
+    # `required: false` so Compose doesn't fail when the file is absent
+    # (e.g. on the VPS, where everything comes from the repo-root .env
+    # rendered by the CD workflow). Requires Docker Compose v2.18+.
     env_file:
-      - ./excalidraw-be/.env
+      - path: ./excalidraw-be/.env
+        required: false
     restart: unless-stopped
     networks:
       - excalidraw-network

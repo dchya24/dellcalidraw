@@ -133,80 +133,162 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           script_stop: true
-          envs: GHCR_USER,GHCR_TOKEN,DEPLOY_PATH,BACKEND_IMAGE,FRONTEND_IMAGE,BACKEND_PORT,FRONTEND_PORT,APP_ENV,DB_HOST,DB_PORT,DB_USER,DB_PASSWORD,DB_NAME,DB_SSLMODE,STORAGE_ENDPOINT,STORAGE_ACCESS_KEY,STORAGE_SECRET_KEY,STORAGE_BUCKET,STORAGE_REGION,STORAGE_USE_SSL,WEBSOCKET_ENCRYPTION_ENABLED,EMAIL_PROVIDER,EMAIL_FROM,EMAIL_BASE_URL,EMAIL_SMTP_HOST,EMAIL_SMTP_PORT,EMAIL_SMTP_USERNAME,EMAIL_SMTP_PASSWORD,EMAIL_SMTP_STARTTLS,BACKUP_GPG_PASSPHRASE,BACKUP_CRON,BACKUP_RETENTION_DAYS,BACKUP_S3_PREFIX,BACKUP_RUN_ON_START,TZ
+          command_timeout: 10m
+          envs: |
+            REGISTRY
+            GHCR_USER
+            GHCR_TOKEN
+            DEPLOY_PATH
+            BACKEND_IMAGE
+            FRONTEND_IMAGE
+            BACKEND_PORT
+            FRONTEND_PORT
+            APP_ENV
+            DB_HOST
+            DB_PORT
+            DB_USER
+            DB_PASSWORD
+            DB_NAME
+            DB_SSLMODE
+            STORAGE_ENDPOINT
+            STORAGE_ACCESS_KEY
+            STORAGE_SECRET_KEY
+            STORAGE_BUCKET
+            STORAGE_REGION
+            STORAGE_USE_SSL
+            WEBSOCKET_ENCRYPTION_ENABLED
+            EMAIL_PROVIDER
+            EMAIL_FROM
+            EMAIL_BASE_URL
+            EMAIL_SMTP_HOST
+            EMAIL_SMTP_PORT
+            EMAIL_SMTP_USERNAME
+            EMAIL_SMTP_PASSWORD
+            EMAIL_SMTP_STARTTLS
+            BACKUP_GPG_PASSPHRASE
+            BACKUP_CRON
+            BACKUP_RETENTION_DAYS
+            BACKUP_S3_PREFIX
+            BACKUP_RUN_ON_START
+            TZ
           script: |
             set -euo pipefail
+
+            # Verify deploy directory exists
+            if [ ! -d "$DEPLOY_PATH" ]; then
+              echo "::error::DEPLOY_PATH does not exist: $DEPLOY_PATH"
+              exit 1
+            fi
             cd "$DEPLOY_PATH"
+
+            # Detect Docker Compose (v2 plugin or v1 standalone)
+            DOCKER_COMPOSE=""
+            if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+              DOCKER_COMPOSE="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              DOCKER_COMPOSE="docker-compose"
+            else
+              echo "::error::Neither 'docker compose' nor 'docker-compose' found on VPS"
+              exit 1
+            fi
 
             # Debug: verify image tags (secrets are masked by GitHub)
             echo "BACKEND_IMAGE length: ${#BACKEND_IMAGE}"
             echo "FRONTEND_IMAGE length: ${#FRONTEND_IMAGE}"
             echo "GHCR_TOKEN set: $([ -n "${GHCR_TOKEN:-}" ] && echo yes || echo no)"
+            echo "Using: $DOCKER_COMPOSE"
 
-            # Render .env from GitHub Secrets
-            cat > .env <<EOF
-            # ---------- Image tags ----------
-            BACKEND_IMAGE=${BACKEND_IMAGE}
-            FRONTEND_IMAGE=${FRONTEND_IMAGE}
-
-            # ---------- Host port bindings ----------
-            BACKEND_PORT=${BACKEND_PORT}
-            FRONTEND_PORT=${FRONTEND_PORT}
-
-            # ---------- App ----------
-            APP_ENV=${APP_ENV}
-
-            # ---------- Database (PostgreSQL) ----------
-            EXCALIDRAW_DATABASE_HOST=${DB_HOST}
-            EXCALIDRAW_DATABASE_PORT=${DB_PORT}
-            EXCALIDRAW_DATABASE_USER=${DB_USER}
-            EXCALIDRAW_DATABASE_PASSWORD=${DB_PASSWORD}
-            EXCALIDRAW_DATABASE_DBNAME=${DB_NAME}
-            EXCALIDRAW_DATABASE_SSLMODE=${DB_SSLMODE}
-
-            # ---------- Object storage (S3-compatible) ----------
-            EXCALIDRAW_STORAGE_ENDPOINT=${STORAGE_ENDPOINT}
-            EXCALIDRAW_STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY}
-            EXCALIDRAW_STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY}
-            EXCALIDRAW_STORAGE_BUCKET=${STORAGE_BUCKET}
-            EXCALIDRAW_STORAGE_REGION=${STORAGE_REGION}
-            EXCALIDRAW_STORAGE_USE_SSL=${STORAGE_USE_SSL}
-
-            # ---------- WebSocket encryption ----------
-            EXCALIDRAW_WEBSOCKET_ENCRYPTION_ENABLED=${WEBSOCKET_ENCRYPTION_ENABLED}
-
-            # ---------- Email delivery ----------
-            EXCALIDRAW_EMAIL_PROVIDER=${EMAIL_PROVIDER}
-            EXCALIDRAW_EMAIL_FROM=${EMAIL_FROM}
-            EXCALIDRAW_EMAIL_BASE_URL=${EMAIL_BASE_URL}
-            EXCALIDRAW_EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST}
-            EXCALIDRAW_EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT}
-            EXCALIDRAW_EMAIL_SMTP_USERNAME=${EMAIL_SMTP_USERNAME}
-            EXCALIDRAW_EMAIL_SMTP_PASSWORD=${EMAIL_SMTP_PASSWORD}
-            EXCALIDRAW_EMAIL_SMTP_STARTTLS=${EMAIL_SMTP_STARTTLS}
-
-            # ---------- Backup service ----------
-            BACKUP_GPG_PASSPHRASE=${BACKUP_GPG_PASSPHRASE}
-            BACKUP_CRON=${BACKUP_CRON}
-            BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS}
-            BACKUP_S3_PREFIX=${BACKUP_S3_PREFIX}
-            BACKUP_RUN_ON_START=${BACKUP_RUN_ON_START}
-            TZ=${TZ}
-            EOF
+            # Render .env from GitHub Secrets.
+            # Use printf %s so that secret values containing $, \, `, etc.
+            # are written literally instead of being expanded by the shell.
+            printf '%s\n' \
+              '# ---------- Image tags ----------' \
+              "BACKEND_IMAGE=${BACKEND_IMAGE}" \
+              "FRONTEND_IMAGE=${FRONTEND_IMAGE}" \
+              '' \
+              '# ---------- Host port bindings ----------' \
+              "BACKEND_PORT=${BACKEND_PORT}" \
+              "FRONTEND_PORT=${FRONTEND_PORT}" \
+              '' \
+              '# ---------- App ----------' \
+              "APP_ENV=${APP_ENV}" \
+              '' \
+              '# ---------- Database (PostgreSQL) ----------' \
+              "EXCALIDRAW_DATABASE_HOST=${DB_HOST}" \
+              "EXCALIDRAW_DATABASE_PORT=${DB_PORT}" \
+              "EXCALIDRAW_DATABASE_USER=${DB_USER}" \
+              "EXCALIDRAW_DATABASE_PASSWORD=${DB_PASSWORD}" \
+              "EXCALIDRAW_DATABASE_DBNAME=${DB_NAME}" \
+              "EXCALIDRAW_DATABASE_SSLMODE=${DB_SSLMODE}" \
+              '' \
+              '# ---------- Object storage (S3-compatible) ----------' \
+              "EXCALIDRAW_STORAGE_ENDPOINT=${STORAGE_ENDPOINT}" \
+              "EXCALIDRAW_STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY}" \
+              "EXCALIDRAW_STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY}" \
+              "EXCALIDRAW_STORAGE_BUCKET=${STORAGE_BUCKET}" \
+              "EXCALIDRAW_STORAGE_REGION=${STORAGE_REGION}" \
+              "EXCALIDRAW_STORAGE_USE_SSL=${STORAGE_USE_SSL}" \
+              '' \
+              '# ---------- WebSocket encryption ----------' \
+              "EXCALIDRAW_WEBSOCKET_ENCRYPTION_ENABLED=${WEBSOCKET_ENCRYPTION_ENABLED}" \
+              '' \
+              '# ---------- Email delivery ----------' \
+              "EXCALIDRAW_EMAIL_PROVIDER=${EMAIL_PROVIDER}" \
+              "EXCALIDRAW_EMAIL_FROM=${EMAIL_FROM}" \
+              "EXCALIDRAW_EMAIL_BASE_URL=${EMAIL_BASE_URL}" \
+              "EXCALIDRAW_EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST}" \
+              "EXCALIDRAW_EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT}" \
+              "EXCALIDRAW_EMAIL_SMTP_USERNAME=${EMAIL_SMTP_USERNAME}" \
+              "EXCALIDRAW_EMAIL_SMTP_PASSWORD=${EMAIL_SMTP_PASSWORD}" \
+              "EXCALIDRAW_EMAIL_SMTP_STARTTLS=${EMAIL_SMTP_STARTTLS}" \
+              '' \
+              '# ---------- Backup service ----------' \
+              "BACKUP_GPG_PASSPHRASE=${BACKUP_GPG_PASSPHRASE}" \
+              "BACKUP_CRON=${BACKUP_CRON}" \
+              "BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS}" \
+              "BACKUP_S3_PREFIX=${BACKUP_S3_PREFIX}" \
+              "BACKUP_RUN_ON_START=${BACKUP_RUN_ON_START}" \
+              "TZ=${TZ}" \
+              > .env
             chmod 600 .env
 
-            # Authenticate to GHCR — required for private packages.
-            # GHCR_TOKEN is a PAT/classic with at least `read:packages`.
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            # --- GHCR Authentication ---
+            # GHCR_PULL_TOKEN must be a classic PAT with `read:packages` scope
+            # (or a fine-grained PAT with `packages: read` on this repo).
+            # GHCR_USER can be any string; the token determines auth. Using the
+            # token owner's GitHub username is conventional.
+            echo "Logging into $REGISTRY as '$GHCR_USER'..."
+            if ! printf '%s' "$GHCR_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin 2>&1; then
+              echo "::error::docker login to $REGISTRY failed — check GHCR_PULL_TOKEN scope (needs read:packages)"
+              exit 1
+            fi
+            echo "docker login succeeded."
 
-            docker compose pull
-            docker compose up -d --remove-orphans
+            # --- Verify images are reachable ---
+            # Try a lightweight manifest check before compose pull — surfaces
+            # access-denied / not-found errors with the exact image path.
+            echo "Verifying image: $BACKEND_IMAGE"
+            if ! docker manifest inspect "$BACKEND_IMAGE" >/dev/null 2>&1; then
+              echo "::error::Cannot inspect $BACKEND_IMAGE — image missing or access denied."
+              echo "Hint: check that GHCR_PULL_TOKEN has read:packages scope and the image exists at $REGISTRY"
+              exit 1
+            fi
+            echo "Verifying image: $FRONTEND_IMAGE"
+            if ! docker manifest inspect "$FRONTEND_IMAGE" >/dev/null 2>&1; then
+              echo "::error::Cannot inspect $FRONTEND_IMAGE — image missing or access denied."
+              exit 1
+            fi
+            echo "Both images reachable."
+
+            $DOCKER_COMPOSE pull
+            $DOCKER_COMPOSE up -d --remove-orphans
 
             # Drop dangling images to keep disk usage in check.
             docker image prune -f
 
-            docker logout ghcr.io || true
+            docker logout "$REGISTRY" || true
         env:
+          REGISTRY: ${{ env.REGISTRY }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
           DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}

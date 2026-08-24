@@ -27,7 +27,6 @@ function App() {
     return urlParams.get("reset-token") || urlParams.get("token");
   };
 
-
   const [resetToken, setResetToken] = useState(() => getInitialToken());
   const [resetPasswordOpen, setResetPasswordOpen] = useState(() => {
     const token = getInitialToken();
@@ -62,7 +61,9 @@ function App() {
   // The `Math.random()` call for the fresh guest name is unavoidable
   // (the value must differ across logouts), so the purity rule is
   // disabled for that one expression.
-  const [lastSyncedUserId, setLastSyncedUserId] = useState<string | undefined>(user?.id);
+  const [lastSyncedUserId, setLastSyncedUserId] = useState<string | undefined>(
+    user?.id,
+  );
   const [lastSyncedIsAuth, setLastSyncedIsAuth] = useState(isAuthenticated);
   if (lastSyncedUserId !== user?.id || lastSyncedIsAuth !== isAuthenticated) {
     const wasAuth = lastSyncedIsAuth;
@@ -91,7 +92,7 @@ function App() {
   useEffect(() => {
     if (isAuthenticated) {
       tokenRefreshService.start().catch((err) => {
-        console.error('[App] Failed to start token refresh service:', err);
+        console.error("[App] Failed to start token refresh service:", err);
       });
     } else {
       tokenRefreshService.stop();

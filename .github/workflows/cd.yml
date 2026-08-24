@@ -65,9 +65,6 @@ jobs:
           push: true
           tags: ${{ steps.meta-fe.outputs.tags }}
           labels: ${{ steps.meta-fe.outputs.labels }}
-          build-args: |
-            VITE_API_URL=${{ secrets.VITE_API_URL }}
-            VITE_WS_URL=${{ secrets.VITE_WS_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

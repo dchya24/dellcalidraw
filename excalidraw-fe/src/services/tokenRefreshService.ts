@@ -132,14 +132,15 @@ class TokenRefreshService {
    * Get base URL for API calls
    */
   private getBaseUrl(): string {
-    if (typeof window === 'undefined') return 'http://localhost:8080';
-    
+    if (typeof window === 'undefined') return 'http://localhost';
+
     const envUrl = import.meta.env.VITE_API_URL;
     if (envUrl) return envUrl;
 
+    // Same-origin fallback: see services/api.ts getBaseUrl().
     const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
     const host = window.location.hostname;
-    return `${protocol}//${host}:8080`;
+    return `${protocol}//${host}`;
   }
 
   /**

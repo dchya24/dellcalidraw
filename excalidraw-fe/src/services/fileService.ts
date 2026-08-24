@@ -4,9 +4,10 @@ function getBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl;
 
+  // Same-origin fallback: see services/api.ts getBaseUrl().
   const protocol = window.location.protocol === "https:" ? "https:" : "http:";
   const host = window.location.hostname;
-  return `${protocol}//${host}:8080`;
+  return `${protocol}//${host}`;
 }
 
 // User file types (frontend representation)

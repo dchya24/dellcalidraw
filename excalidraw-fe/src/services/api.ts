@@ -9,9 +9,12 @@ function getBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl;
 
+  // Same-origin fallback: the API is served from the same origin via a
+  // reverse proxy (e.g. Traefik routing /api -> backend). Dev uses the
+  // Vite proxy, so no port suffix is needed here.
   const protocol = window.location.protocol === "https:" ? "https:" : "http:";
   const host = window.location.hostname;
-  return `${protocol}//${host}:8080`;
+  return `${protocol}//${host}`;
 }
 
 class ApiService {

@@ -6,16 +6,14 @@ import type {
 function getBaseUrl(): string {
   // Priority 1: Environment variable (for production)
   const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl) {
-    console.log("[AI Service] Using VITE_API_URL:", envUrl);
-    return envUrl;
-  }
+  if (envUrl) return envUrl;
 
-  // For development: use direct backend URL (CORS is configured on backend)
+  // Same-origin fallback: the API is served from the same origin via a
+  // reverse proxy (e.g. Traefik routing /api -> backend). Dev uses the
+  // Vite proxy, so no port suffix is needed here.
   const protocol = window.location.protocol === "https:" ? "https:" : "http:";
   const host = window.location.hostname;
-  // Use port 8080 for backend
-  return `${protocol}//${host}:8080`;
+  return `${protocol}//${host}`;
 }
 
 // ─── SSE event parser ────────────────────────────────────────────────────────

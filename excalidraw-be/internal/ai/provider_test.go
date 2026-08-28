@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -163,5 +164,35 @@ func TestBuildSystemPromptWithoutMemory_NoBlock(t *testing.T) {
 	block := buildSystemPromptWithMemory(nil, nil)
 	if strings.Contains(block, "## Relevant memory") {
 		t.Errorf("did not expect memory block when none provided")
+	}
+}
+
+func TestMessage_SerializesToolCallID(t *testing.T) {
+	m := Message{Role: "tool", Content: `{"ok":true}`, ToolCallID: "call_1"}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if !strings.Contains(s, `"tool_call_id":"call_1"`) {
+		t.Errorf("missing tool_call_id in %s", s)
+	}
+	if !strings.Contains(s, `"role":"tool"`) {
+		t.Errorf("missing role in %s", s)
+	}
+}
+
+func TestAppendAnthropicToolResult(t *testing.T) {
+	blocks := []map[string]any{}
+	blocks = appendAnthropicToolResult(blocks, Message{Role: "user", Content: "hi"})
+	if len(blocks) != 0 {
+		t.Errorf("user message should not produce tool_result block, got %d", len(blocks))
+	}
+	blocks = appendAnthropicToolResult(blocks, Message{Role: "tool", ToolCallID: "abc", Content: "ok"})
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(blocks))
+	}
+	if blocks[0]["type"] != "tool_result" || blocks[0]["tool_use_id"] != "abc" {
+		t.Errorf("wrong block: %v", blocks[0])
 	}
 }

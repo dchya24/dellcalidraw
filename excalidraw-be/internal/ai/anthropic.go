@@ -411,3 +411,16 @@ func convertAnthropicTools(tools []Tool) []anthropicTool {
 	}
 	return result
 }
+
+// appendAnthropicToolResult appends a tool-result content block to a user
+// message's content array. Non-tool messages are silently ignored.
+func appendAnthropicToolResult(blocks []map[string]any, m Message) []map[string]any {
+	if m.Role != "tool" {
+		return blocks
+	}
+	return append(blocks, map[string]any{
+		"type":        "tool_result",
+		"tool_use_id": m.ToolCallID,
+		"content":     m.Content,
+	})
+}

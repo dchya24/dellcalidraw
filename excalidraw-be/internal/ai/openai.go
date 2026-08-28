@@ -60,8 +60,9 @@ type openAIStreamOptions struct {
 }
 
 type openAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string `json:"role"`
+	Content    string `json:"content,omitempty"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
 }
 
 type openAITool struct {
@@ -496,8 +497,9 @@ func convertMessages(messages []Message) []openAIMessage {
 	result := make([]openAIMessage, len(messages))
 	for i, m := range messages {
 		result[i] = openAIMessage{
-			Role:    m.Role,
-			Content: m.Content,
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCallID: m.ToolCallID,
 		}
 	}
 	return result

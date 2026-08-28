@@ -142,6 +142,7 @@ func main() {
 		}
 		aiHandler = ai.NewHandler(provider)
 		aiHandler.SetProviderName(cfg.AI.Provider)
+		aiHandler.SetAgentRegistry(&ai.Registry{})
 
 		// Memory plane (optional)
 		if cfg.AI.MemoryEnabled && dbClient != nil {

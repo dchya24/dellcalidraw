@@ -194,7 +194,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE ai_memory_entries (
     id           UUID PRIMARY KEY,
     owner_type   TEXT NOT NULL,            -- 'user' | 'room'
-    owner_id     UUID NOT NULL,            -- user_id or room_id
+    owner_id     TEXT NOT NULL,            -- user_id or room_id (strings, matching file_tabs.room_id and auth claims)
     tab_id       UUID,                     -- nullable: memory specific to one tab
     kind         TEXT NOT NULL,            -- 'summary' | 'raw'
     content      TEXT NOT NULL,            -- summary text or raw message JSON

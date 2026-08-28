@@ -106,7 +106,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS ai_memory_entries (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     owner_type   TEXT NOT NULL,            -- 'user' | 'room'
-    owner_id     UUID NOT NULL,
+    owner_id     TEXT NOT NULL,
     tab_id       UUID,
     kind         TEXT NOT NULL,            -- 'summary' | 'raw'
     content      TEXT NOT NULL,

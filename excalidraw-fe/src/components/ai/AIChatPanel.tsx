@@ -15,7 +15,13 @@ import {
 } from "lucide-react";
 import { useAIChatStore } from "../../store/useAIChatStore";
 import { useWhiteboardStore } from "../../store/useWhiteboardStore";
-import { sendChatMessage, listModels, getActiveModel } from "../../services/ai/aiService";
+import {
+  sendChatMessage,
+  listModels,
+  getActiveModel,
+  submitToolResults,
+  type BrowserToolResult,
+} from "../../services/ai/aiService";
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { ChatMessage, ToolCall, TokenUsage } from "../../types/ai";
@@ -54,6 +60,10 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
   const trackedElementIds = useRef<string[]>([]);
   const trackedUsage = useRef<TokenUsage | null>(null);
   const [hasError, setHasError] = useState(false);
+  const [iterStep, setIterStep] = useState(0);
+  const [iterMax, setIterMax] = useState(20);
+  const requestIdRef = useRef<string | null>(null);
+  const iterResultsRef = useRef<BrowserToolResult[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
 
   // Resizable panel: width/height stored in px, persisted to
@@ -158,9 +168,23 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
       timestamp: Date.now(),
     };
 
+    // Build transcript from the conversation so far (excluding the new
+    // user message we're about to add). Strip fields the backend ignores.
+    const { conversations: transcriptConvs } = useAIChatStore.getState();
+    const transcript = (transcriptConvs[currentTabId] || []).map((m) => ({
+      ...m,
+      createdElementIds: undefined,
+      usage: undefined,
+    }));
+
     addMessage(currentTabId, userMessage);
     setInputValue("");
     setStreaming(true);
+
+    // Reset per-request agent-loop state.
+    requestIdRef.current = null;
+    iterResultsRef.current = [];
+    setIterStep(0);
 
     // Create abort controller for this request
     abortControllerRef.current?.abort();
@@ -197,6 +221,18 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
       timestamp: Date.now(),
     });
 
+    // Submit accumulated tool results for the current iteration back to
+    // the backend so the agent loop can continue. Fire-and-forget with
+    // error logging — a failed submission just means the loop stalls.
+    const flushResults = () => {
+      if (iterResultsRef.current.length === 0 || !requestIdRef.current) return;
+      const batch = iterResultsRef.current;
+      iterResultsRef.current = [];
+      submitToolResults(requestIdRef.current, batch).catch((err) => {
+        console.error("[AIChatPanel] submitToolResults failed", err);
+      });
+    };
+
     await sendChatMessage({
       message: userMessage.content,
       model: activeModel || undefined,
@@ -205,6 +241,16 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
         activeFileId: activeFile.id,
         activeTabId: activeTab.id,
         roomId: activeTab.roomId,
+      },
+      transcript,
+      onStart: (rid, max) => {
+        requestIdRef.current = rid;
+        setIterMax(max);
+        setIterStep(1);
+      },
+      onAgentIteration: (step) => setIterStep(step),
+      onAgentFinal: () => {
+        // Loop concluded; done event will finalize the message.
       },
       onEvent: (event) => {
         if (!excalidrawAPI) return;
@@ -219,6 +265,9 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
                 content: (textLast.content || "") + event.content,
               });
             }
+            // Text usually follows a completed tool-call batch; flush
+            // results so the backend can start the next iteration.
+            flushResults();
             break;
           }
 
@@ -246,6 +295,20 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
               }
             }
 
+            // Record the result entry for this call (optimistic success).
+            // If execution throws, the catch below marks it failed. The
+            // batch is flushed back to the backend on the next text/done
+            // event so the agent loop can continue.
+            const callId = event.id || crypto.randomUUID();
+            const resultEntry: BrowserToolResult = {
+              callId,
+              name: toolName,
+              success: true,
+              result: {},
+            };
+            iterResultsRef.current.push(resultEntry);
+
+            try {
             // Handle camera_update - just log it for now (viewport is auto-managed)
             if (toolName === "camera_update") {
               console.log("[AIChatPanel] Camera update requested:", args);
@@ -355,6 +418,11 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
               }
             }
             break;
+            } catch (toolErr) {
+              resultEntry.success = false;
+              resultEntry.error = toolErr instanceof Error ? toolErr.message : String(toolErr);
+            }
+            break;
           }
 
           case "tool_result":
@@ -389,9 +457,13 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
             trackedToolCalls.current = [];
             trackedElementIds.current = [];
             trackedUsage.current = null;
+            setIterStep(0);
             if (excalidrawAPI) {
               excalidrawAPI.history.clear();
             }
+            // Flush any un-submitted tool results (e.g. batch ended
+            // without a trailing text event).
+            flushResults();
             break;
           }
           case 'error': {
@@ -415,6 +487,7 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
         trackedToolCalls.current = [];
         trackedElementIds.current = [];
         trackedUsage.current = null;
+        setIterStep(0);
         setStreaming(false);
       },
       signal: abortControllerRef.current.signal,
@@ -558,6 +631,14 @@ export default function AIChatPanel({ excalidrawAPI }: AIChatPanelProps) {
             <Sparkles size={16} className="text-white" />
           </div>
           <span className="font-semibold text-sm">AI Assistant</span>
+          {iterStep > 0 && (
+            <span
+              className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-full bg-blue-50 text-[10px] text-blue-500 font-mono"
+              title="Agent loop iteration"
+            >
+              iter {iterStep}/{iterMax}
+            </span>
+          )}
           {(() => {
             const total = sumSessionUsage(messages);
             if (total.totalTokens <= 0) return null;

@@ -1,10 +1,9 @@
-package agent
+package ai
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/you/excalidraw-be/internal/ai"
 )
 
 // MaxToolCalls is the hard cap on tool-call iterations per request.
@@ -24,16 +23,16 @@ const wrapUpReminder = `You have used %d tool-calls for this request and reached
 //   - The iteration count exceeds MaxToolCalls → a wrap-up call is made
 //     with tools=nil, then reason "max_steps".
 //   - A provider error occurs → reason "error".
-func Run(ctx context.Context, state *LoopState, onFinal func(string)) error {
+func AgentRun(ctx context.Context, state *LoopState, onFinal func(string)) error {
 	send := state.Send
 	if send == nil {
-		send = func(ai.SSEEvent) error { return nil }
+		send = func(SSEEvent) error { return nil }
 	}
 
 	state.step++
 
 	// Emit iteration event.
-	_ = send(ai.SSEEvent{
+	_ = send(SSEEvent{
 		Type:    "agent_iteration",
 		Content: fmt.Sprintf("%d", state.step),
 	})
@@ -43,7 +42,7 @@ func Run(ctx context.Context, state *LoopState, onFinal func(string)) error {
 	toolsForCall := state.Tools
 	if isWrapUp {
 		toolsForCall = nil
-		state.Messages = append(state.Messages, ai.Message{
+		state.Messages = append(state.Messages, Message{
 			Role:    "system",
 			Content: fmt.Sprintf(wrapUpReminder, MaxToolCalls),
 		})
@@ -73,18 +72,12 @@ func Run(ctx context.Context, state *LoopState, onFinal func(string)) error {
 	return nil
 }
 
-// RunOnce is a convenience for test and simple use-cases: it runs a
-// single iteration and marks the loop as ended with reason "stop".
-func RunOnce(ctx context.Context, state *LoopState) error {
-	return Run(ctx, state, func(reason string) {
-		_ = reason
-	})
-}
+
 
 // SendDone emits the final "done" SSE event. Called by the handler
 // after the last Run returns.
 func SendDone(state *LoopState) {
-	_ = state.Send(ai.SSEEvent{
+	_ = state.Send(SSEEvent{
 		Type:    "done",
 		Content: "Generation complete",
 	})

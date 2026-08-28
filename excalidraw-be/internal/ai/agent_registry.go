@@ -1,24 +1,23 @@
-package agent
+package ai
 
 import (
 	"sync"
 
-	"github.com/you/excalidraw-be/internal/ai"
 	"github.com/you/excalidraw-be/internal/ai/memory"
 )
 
 // LoopState holds the mutable state for one agent loop iteration set.
 type LoopState struct {
 	RequestID string
-	Messages  []ai.Message
-	Tools     []ai.Tool
+	Messages  []Message
+	Tools     []Tool
 	Model     string
-	Provider  ai.LLMProvider
+	Provider  LLMProvider
 	Memory    []memory.MemoryEntry
 
 	// Send writes SSE events back to the client stream owned by the
 	// /api/ai/chat handler.
-	Send func(ai.SSEEvent) error
+	Send func(SSEEvent) error
 
 	// Done is closed when the loop finishes (for any reason).
 	Done chan struct{}
@@ -29,7 +28,7 @@ type LoopState struct {
 	// Pending collects tool-result messages that arrive between
 	// LLM iterations. Protected by mu because the handler writes
 	// from the /tool-result goroutine while Run reads.
-	Pending   []ai.Message
+	Pending   []Message
 	mu        sync.Mutex
 	ended     bool
 	EndReason string
@@ -37,7 +36,7 @@ type LoopState struct {
 
 // AppendPending adds tool-result messages. It is safe to call from
 // the /tool-result HTTP handler while Run is blocked.
-func (s *LoopState) AppendPending(m ai.Message) {
+func (s *LoopState) AppendPending(m Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ended {
@@ -48,7 +47,7 @@ func (s *LoopState) AppendPending(m ai.Message) {
 
 // DrainPending returns and clears the pending queue. Called by Run
 // before each LLM call to fold tool results into the transcript.
-func (s *LoopState) DrainPending() []ai.Message {
+func (s *LoopState) DrainPending() []Message {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := s.Pending
@@ -90,3 +89,12 @@ func (r *Registry) Drop(id string) { r.m.Delete(id) }
 
 // Has reports whether a loop state exists for the given id.
 func (r *Registry) Has(id string) bool { _, ok := r.m.Load(id); return ok }
+
+// Get returns the LoopState for the given id, or nil if not found.
+func (r *Registry) Get(id string) *LoopState {
+	v, ok := r.m.Load(id)
+	if !ok {
+		return nil
+	}
+	return v.(*LoopState)
+}

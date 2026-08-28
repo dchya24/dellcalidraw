@@ -99,13 +99,33 @@ export interface SSEErrorEvent {
   message: string;
 }
 
+export interface SSEStartEvent {
+  type: "start";
+  requestId: string;
+  maxSteps: number;
+}
+
+export interface SSEAgentIterationEvent {
+  type: "agent_iteration";
+  step: number;
+  maxSteps: number;
+}
+
+export interface SSEAgentFinalEvent {
+  type: "agent_final";
+  reason: "stop" | "max_steps" | "error";
+}
+
 export type SSEEvent =
   | SSETextEvent
   | SSEToolCallEvent
   | SSEToolResultEvent
   | SSEUsageEvent
   | SSEDoneEvent
-  | SSEErrorEvent;
+  | SSEErrorEvent
+  | SSEStartEvent
+  | SSEAgentIterationEvent
+  | SSEAgentFinalEvent;
 
 // ─── AI Tools (MCP) ──────────────────────────────────────────────────────────
 

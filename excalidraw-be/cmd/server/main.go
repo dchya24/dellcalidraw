@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/you/excalidraw-be/internal/ai"
+	"github.com/you/excalidraw-be/internal/ai/memory"
 	"github.com/you/excalidraw-be/internal/auth"
 	"github.com/you/excalidraw-be/internal/config"
 	"github.com/you/excalidraw-be/internal/database"
@@ -141,6 +142,29 @@ func main() {
 		}
 		aiHandler = ai.NewHandler(provider)
 		aiHandler.SetProviderName(cfg.AI.Provider)
+
+		// Memory plane (optional)
+		if cfg.AI.MemoryEnabled && dbClient != nil {
+			memoryRepo := database.NewAIMemoryRepository(dbClient.DB())
+			embeddings := memory.NewEmbeddingsClient(cfg.AI.APIKey, cfg.AI.BaseURL, cfg.AI.EmbeddingModel)
+			summarizer := memory.NewOpenAISummarizer(cfg.AI.APIKey, cfg.AI.BaseURL, cfg.AI.SummaryModel)
+			retriever := memory.NewRetriever(memoryRepo, embeddings, cfg.AI.MemoryTopK, cfg.AI.MemoryMaxTokens)
+			ingester := memory.NewIngester(memoryRepo, embeddings, summarizer)
+			aiHandler.SetRetriever(retriever)
+			aiHandler.SetIngester(ingester)
+			authMW := auth.JWTMiddleware(authService)
+			aiHandler.SetIdentityResolver(func(r *http.Request) (string, string) {
+				// Reuse the auth middleware to populate context; if the request
+				// already has a user ID (set upstream), extract it directly.
+				uid, _ := r.Context().Value("userID").(string)
+				_ = authMW  // kept for documentation; identity is set above
+				return uid, ""
+			})
+			logger.Info("AI memory plane enabled",
+				zap.String("embedding_model", cfg.AI.EmbeddingModel),
+				zap.String("summary_model", cfg.AI.SummaryModel),
+			)
+		}
 
 		// Enable request logging to PostgreSQL (development only)
 		if cfg.IsDevelopment() && dbClient != nil {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/you/excalidraw-be/internal/ai/memory"
 )
 
 // RequestLogger is an interface for logging AI requests (development only)
@@ -54,10 +55,14 @@ type ToolCallLog struct {
 
 // Handler holds AI HTTP handlers
 type Handler struct {
-	provider      LLMProvider
-	tools         []Tool
-	requestLogger RequestLogger // nil if not in development mode
-	providerName  string
+	provider         LLMProvider
+	tools            []Tool
+	requestLogger    RequestLogger // nil if not in development mode
+	providerName     string
+	retriever        *memory.Retriever
+	ingester         *memory.Ingester
+	resolveIdentity  func(*http.Request) (string, string)
+	maxMemoryTokens  int
 }
 
 // NewHandler creates new AI handler
@@ -77,6 +82,13 @@ func (h *Handler) SetRequestLogger(logger RequestLogger) {
 func (h *Handler) SetProviderName(name string) {
 	h.providerName = name
 }
+
+func (h *Handler) SetRetriever(r *memory.Retriever)  { h.retriever = r }
+func (h *Handler) SetIngester(i *memory.Ingester)    { h.ingester = i }
+func (h *Handler) SetIdentityResolver(f func(*http.Request) (string, string)) {
+	h.resolveIdentity = f
+}
+func (h *Handler) SetMaxMemoryTokens(n int)          { h.maxMemoryTokens = n }
 
 // RegisterRoutes registers AI routes
 func (h *Handler) RegisterRoutes(r chi.Router) {
@@ -178,6 +190,26 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	var toolCalls []ToolCallLog
 	var tokenUsage *Usage
 
+	// Retrieve memory if the handler is configured for it.
+	var memEntries []memory.MemoryEntry
+	if h.retriever != nil && h.resolveIdentity != nil {
+		userID, roomID := h.resolveIdentity(r)
+		if userID != "" {
+			owners := []memory.Owner{memory.UserOwner(userID)}
+			if roomID != "" {
+				owners = append(owners, memory.RoomOwner(roomID))
+			}
+			ctxRetrieve, cancel := context.WithTimeout(ctx, 5*time.Second)
+			got, err := h.retriever.Retrieve(ctxRetrieve, req.Message, owners)
+			cancel()
+			if err != nil {
+				slog.Warn("[AI Handler] memory retrieve failed, continuing without", "error", err)
+			} else {
+				memEntries = got
+			}
+		}
+	}
+
 	sendEvent := func(event SSEEvent) error {
 		slog.Info("[AI Handler] Sending event", "type", event.Type, "content", event.Content)
 
@@ -228,7 +260,7 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	// Stream with immediate feedback
 	slog.Info("[AI Handler] Starting AI stream...")
-	if err := h.provider.ChatStream(ctx, messages, h.tools, model, sendEvent); err != nil {
+	if err := h.provider.ChatStreamWithMemory(ctx, messages, h.tools, model, memEntries, sendEvent); err != nil {
 		slog.Error("[AI Handler] AI stream error", "error", err)
 		if !strings.Contains(err.Error(), "context canceled") {
 			_ = sendEvent(SSEEvent{
@@ -254,6 +286,19 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		Type:    "done",
 		Content: "Generation complete",
 	})
+
+	// Ingest the conversation into memory (async, best-effort).
+	if h.ingester != nil && h.resolveIdentity != nil {
+		userID, roomID := h.resolveIdentity(r)
+		if userID != "" {
+			tabID, _ := req.CanvasContext["activeTabId"].(string)
+			transcript := "User: " + req.Message + "\nAssistant: " + responseText.String()
+			h.ingester.IngestAsync(memory.IngestRequest{
+				UserID: userID, RoomID: roomID, TabID: tabID,
+				Transcript: transcript, RequestID: requestID, Model: model,
+			})
+		}
+	}
 
 	// Finalize request log (development only)
 	if h.requestLogger != nil && logEntry != nil {

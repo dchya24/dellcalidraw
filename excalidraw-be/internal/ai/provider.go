@@ -3,6 +3,8 @@ package ai
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/you/excalidraw-be/internal/ai/memory"
 )
 
 // ToolCall represents a tool call from LLM
@@ -63,6 +65,9 @@ type LLMProvider interface {
 	// ChatStream sends a message and streams the response via SSE
 	ChatStream(ctx context.Context, messages []Message, tools []Tool, model string, streamFunc func(SSEEvent) error) error
 
+	// ChatStreamWithMemory is like ChatStream but prepends memory entries to the system prompt.
+	ChatStreamWithMemory(ctx context.Context, messages []Message, tools []Tool, model string, mem []memory.MemoryEntry, streamFunc func(SSEEvent) error) error
+
 	// GetModels returns available models
 	GetModels() []string
 
@@ -93,9 +98,13 @@ type ChatResult struct {
 	ToolCalls []ToolCall
 }
 
-// BuildSystemPrompt creates system prompt with canvas context
+// BuildSystemPrompt creates system prompt with canvas context.
 func BuildSystemPrompt(canvasElements []interface{}) string {
-	return `You are an AI assistant that helps users create professional Excalidraw diagrams.
+	return buildSystemPromptWithMemory(canvasElements, nil)
+}
+
+func buildSystemPromptWithMemory(canvasElements []interface{}, mem []memory.MemoryEntry) string {
+	base := `You are an AI assistant that helps users create professional Excalidraw diagrams.
 
 ## COLOR PALETTE (use consistently)
 
@@ -245,6 +254,11 @@ Remember: Tools are PRIMARY (to create the diagram). Text is SECONDARY (to commu
 6. Dark mode: Use #1e1e2e background, lighter colors for elements
 
 Current canvas has ` + formatElementCount(canvasElements) + ` element(s).`
+
+	if block := memory.FormatMemoryBlock(mem); block != "" {
+		base += "\n" + block
+	}
+	return base
 }
 
 func formatElementCount(elements []interface{}) string {

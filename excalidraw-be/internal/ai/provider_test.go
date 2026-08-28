@@ -3,6 +3,9 @@ package ai
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/you/excalidraw-be/internal/ai/memory"
 )
 
 func TestBuildSystemPromptIncludesElementCount(t *testing.T) {
@@ -141,4 +144,24 @@ func keysOf(m map[string]bool) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func TestBuildSystemPromptWithMemory_IncludesBlock(t *testing.T) {
+	now := time.Now()
+	block := buildSystemPromptWithMemory(nil, []memory.MemoryEntry{
+		{OwnerType: memory.OwnerUser, Content: "User likes blue pastels", CreatedAt: now},
+	})
+	if !strings.Contains(block, "## Relevant memory (user)") {
+		t.Errorf("expected memory header in prompt")
+	}
+	if !strings.Contains(block, "User likes blue pastels") {
+		t.Errorf("expected memory content in prompt")
+	}
+}
+
+func TestBuildSystemPromptWithoutMemory_NoBlock(t *testing.T) {
+	block := buildSystemPromptWithMemory(nil, nil)
+	if strings.Contains(block, "## Relevant memory") {
+		t.Errorf("did not expect memory block when none provided")
+	}
 }

@@ -146,9 +146,26 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	messages := []Message{
-		{Role: "system", Content: BuildSystemPrompt(canvasElements)},
-		{Role: "user", Content: req.Message},
+	// Build messages: use client transcript if provided, else system+user.
+	var messages []Message
+	if len(req.Messages) > 0 {
+		// Trust the transcript but always ensure a system message first.
+		if req.Messages[0].Role != "system" {
+			messages = append([]Message{{Role: "system", Content: BuildSystemPrompt(canvasElements)}}, req.Messages...)
+		} else {
+			// Keep client's system message but append canvas context section.
+			req.Messages[0].Content = BuildSystemPrompt(canvasElements)
+			messages = req.Messages
+		}
+	} else {
+		messages = []Message{
+			{Role: "system", Content: BuildSystemPrompt(canvasElements)},
+			{Role: "user", Content: req.Message},
+		}
+	}
+	// The new user message is always appended (transcript excludes it).
+	if len(messages) == 0 || messages[len(messages)-1].Content != req.Message {
+		messages = append(messages, Message{Role: "user", Content: req.Message})
 	}
 
 	// Use model from request if provided and valid, otherwise use server default

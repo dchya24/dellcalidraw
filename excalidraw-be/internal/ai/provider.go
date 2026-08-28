@@ -46,6 +46,7 @@ type Usage struct {
 // ChatRequest represents incoming chat request
 type ChatRequest struct {
 	Message       string                 `json:"message"`
+	Messages      []Message              `json:"messages,omitempty"` // full transcript from client
 	CanvasContext map[string]interface{} `json:"canvasContext"`
 	Model         string                 `json:"model,omitempty"`
 	Stream        bool                   `json:"stream,omitempty"`

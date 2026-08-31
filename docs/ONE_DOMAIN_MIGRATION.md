@@ -103,105 +103,98 @@ Notes:
 
 ## Traefik configuration (VPS)
 
-Traefik is the primary reverse proxy and other projects already run behind it.
-This project does **not** need a second proxy layer — just join the shared
-network Traefik can route to, and add a router + services.
+Traefik runs in its own compose project — network `traefik_default` contains
+only the Traefik container itself; application containers never join it.
+Routes are declared through the **file provider** (dynamic config), pointing
+at the host ports this project publishes. This is the same mechanism the
+other services on the VPS already use, and it needs **zero repo changes**:
+`docker-compose.yml` already publishes `${FRONTEND_PORT:-3000}:80` and
+`${BACKEND_PORT:-8080}:8080`.
 
-### 1. Wire the project's containers into Traefik's network
+### Dynamic config (file provider)
 
-In `docker-compose.yml`, attach the shared network. Replace the standalone
-`excalidraw-network` (or add) a network Traefik can see. Example using a shared
-`traefik` external network:
+Add a router/service set to Traefik's dynamic config directory (the same
+place the routers for the existing services are declared — the directory
+Traefik watches via `providers.file.directory`):
 
 ```yaml
-networks:
-  traefik:
-    external: true
-  excalidraw-network:
-    driver: bridge
-
-services:
-  backend:
-    networks:
-      - excalidraw-network
-      - traefik
-  frontend:
-    networks:
-      - excalidraw-network
-      - traefik
+http:
+  routers:
+    draw-api:
+      rule: "Host(`draw.domain.id`) && PathPrefix(`/api`)"
+      entryPoints: [websecure]
+      service: draw-backend
+      tls:
+        certResolver: letsencrypt
+    draw-ws:
+      rule: "Host(`draw.domain.id`) && Path(`/ws`)"
+      entryPoints: [websecure]
+      service: draw-backend
+      tls:
+        certResolver: letsencrypt
+    draw-fe:
+      rule: "Host(`draw.domain.id`)"
+      entryPoints: [websecure]
+      service: draw-frontend
+      tls:
+        certResolver: letsencrypt
+  services:
+    draw-backend:
+      loadBalancer:
+        servers:
+          - url: "http://<host>:8080"
+    draw-frontend:
+      loadBalancer:
+        servers:
+          - url: "http://<host>:3000"
 ```
 
-> Traefik is typically configured with `providers.docker` + `exposedByDefault:
-> false`, so adding the network enables discovery. Your compose
-> `docker-compose.yml` currently exposes host ports (`8080`, `3000`). Once
-> Traefik routes internally, you may keep those host binds for debugging or
-> remove them — Traefik will reach containers over the docker network directly.
-
-### 2. Add labels (or a Traefik file provider)
-
-The exact mechanism depends on how Traefik is configured (Docker provider
-labels vs. a dynamic config file). The routing is:
-
-| Route rule | Service | Middleware |
-|---|---|---|
-| Host `` `draw.domain.id` `` && PathPrefix `` `/api` `` | backend `:8080` | — (pass-through) |
-| Host `` `draw.domain.id` `` && Path `` `/ws` `` | backend `:8080` | `webSocket` option on the service |
-| Host `` `draw.domain.id` `` | frontend `:80` | — |
-
-With Docker provider labels this looks like:
-
-```yml
-# backend service
-labels:
-  - "traefik.enable=true"
-  - "traefik.http.routers.excalidraw-api.rule=Host(`draw.domain.id`) && PathPrefix(`/api`)"
-  - "traefik.http.routers.excalidraw-api.entrypoints=websecure"
-  - "traefik.http.routers.excalidraw-api.tls.certresolver=letsencrypt"
-  - "traefik.http.services.excalidraw-api.loadbalancer.server.port=8080"
-  # WebSocket
-  - "traefik.http.routers.excalidraw-ws.rule=Host(`draw.domain.id`) && Path(`/ws`)"
-  - "traefik.http.routers.excalidraw-ws.entrypoints=websecure"
-  - "traefik.http.routers.excalidraw-ws.tls.certresolver=letsencrypt"
-  - "traefik.http.routers.excalidraw-ws.service=excalidraw-api"
-  - "traefik.http.services.excalidraw-api.loadbalancer.server.scheme=http"
-
-# frontend service
-labels:
-  - "traefik.enable=true"
-  - "traefik.http.routers.excalidraw-fe.rule=Host(`draw.domain.id`)"
-  - "traefik.http.routers.excalidraw-fe.entrypoints=websecure"
-  - "traefik.http.routers.excalidraw-fe.tls.certresolver=letsencrypt"
-```
-
-WebSocket upgrades require enabling the `webSocket` connect method on the load
-balancer healthcheck if present, and the router must not swallow the `Upgrade`
-header. With `traefik` docker provider, Websocket forwarding works out of the
-box as long as the backend service port is correct; do **not** apply
-`stripPrefix` on the `/ws` route.
+Notes:
+- Longer rules rank higher in Traefik, so the `/api` and `/ws` routers take
+  precedence over the catch-all `Host` router — no explicit `priority` needed.
+- **No `stripPrefix`**: forward paths unchanged (the backend registers
+  `/api/...` and `/ws` itself).
+- WebSocket works out of the box on Traefik v2+ (Upgrade headers are
+  forwarded as-is).
+- `<host>` must be the address the Traefik container can use to reach the
+  host-published ports. Copy the pattern from the existing services' config —
+  common options: Traefik with `network_mode: host`,
+  `host.docker.internal` + `extra_hosts: ["host-gateway:172.17.0.1"]`, or the
+  docker bridge gateway IP.
+- Keep the host port binds in `docker-compose.yml` — under this model they
+  are the routing path, not a debug affordance.
 
 ---
 
-## Deployment steps (after this PR)
+## Deployment steps
 
 1. Merge this change (frontend now builds domain-agnostic).
-2. On the VPS: add this project to the Traefik network + labels (above).
-3. `docker compose pull && docker compose up -d --remove-orphans` (or rerun the
-   CD workflow).
-4. Update DNS: keep `draw.domain.id` pointing at the VPS; `draw-api.domain.id`
-   can stop being used after traffic drains.
-5. Verify:
-   - `curl -s https://draw.domain.id/api/health`
+2. On the VPS: add the routers/services above to Traefik's dynamic config
+   (file provider), matching the entrypoint/cert-resolver names used by the
+   existing services. Traefik reloads dynamic config automatically on file
+   change.
+3. Remove the old `draw-api.domain.id` router from the same config once the
+   new one is verified (keep `draw.domain.id` DNS as-is).
+4. Verify:
+   - `curl -s https://draw.domain.id/api/stats` — exercises the `/api`
+     router end to end. (Backend `/health` is registered at the root path and
+     is intentionally not routed publicly.)
    - Open the site, log in, draw, and confirm AI chat + persistent save work.
    - Watch browser DevTools → Network: API/WS requests should all target
-     `draw.domain.id`.
+     `draw.domain.id` (no CORS preflights).
+
+No repo changes are required for the routing itself: `docker-compose.yml`,
+`cd.yml`, and `.env.example` already publish the host ports the Traefik
+config points at, and the CD deploy flow is untouched.
 
 ---
 
 ## Rollback
 
-Because the frontend image no longer carries env URLs, rollback to the
-two-subdomain model requires rebuilding the image with `VITE_API_URL`/
-`VITE_WS_URL` re-added (previous CI/CD did this). A previously-built image
-with baked-in URLs would need to be re-pushed or the build-args restored. If
-you need to keep both models working simultaneously, re-enable build-args in
-`cd.yml` — the same-origin fallback only applies when those vars are unset.
+Under the file-provider model, rollback is Traefik-config-only: re-add (or
+un-comment) the `draw-api.domain.id` router pointing at the backend host
+port, and the two-subdomain setup works again. No image rebuild is needed —
+the frontend image is domain-agnostic, but the served page only uses
+same-origin URLs; the browser clients already deployed keep calling
+`draw.domain.id/api/...`, which the `/api` router continues to serve either
+way.

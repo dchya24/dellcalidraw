@@ -5,9 +5,7 @@ function getBaseUrl(): string {
   if (envUrl) return envUrl;
 
   // Same-origin fallback: see services/api.ts getBaseUrl().
-  const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-  const host = window.location.hostname;
-  return `${protocol}//${host}`;
+  return window.location.origin;
 }
 
 // User file types (frontend representation)

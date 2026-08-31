@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
       port: Number(env.VITE_PORT) || 5173,
       proxy: {
         '/api': {
-          target: 'http://localhost:8080',
+          target: env.VITE_API_URL || 'http://localhost:8081',
           changeOrigin: true,
           // Disable buffering for SSE streaming
           configure: (proxy) => {

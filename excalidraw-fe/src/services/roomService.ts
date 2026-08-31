@@ -294,9 +294,13 @@ class RoomService {
     if (envWsUrl) {
       baseUrl = envWsUrl;
     } else {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.hostname;
-      baseUrl = `${protocol}//${host}:8080/ws`;
+      // Same-origin fallback: the WebSocket is routed by the reverse
+      // proxy (e.g. Traefik /ws -> backend). window.location.host
+      // includes the dev port, so the dev server's /ws handling is hit
+      // instead of port 80.
+      const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      baseUrl = `${scheme}//${host}/ws`;
     }
 
     const token = this.getStoredAccessToken();

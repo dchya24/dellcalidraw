@@ -1,21 +1,20 @@
 import type {
   SSEEvent,
   CanvasContext,
+  ChatMessage,
 } from "../../types/ai";
 
 function getBaseUrl(): string {
   // Priority 1: Environment variable (for production)
   const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl) {
-    console.log("[AI Service] Using VITE_API_URL:", envUrl);
-    return envUrl;
-  }
+  if (envUrl) return envUrl;
 
-  // For development: use direct backend URL (CORS is configured on backend)
-  const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-  const host = window.location.hostname;
-  // Use port 8080 for backend
-  return `${protocol}//${host}:8080`;
+  // Same-origin fallback: the API is served from the same origin via a
+  // reverse proxy (e.g. Traefik routing /api -> backend). In dev that
+  // origin is the Vite dev server (VITE_PORT), whose /api proxy forwards
+  // to the backend; window.location.origin includes the dev port so the
+  // request actually reaches the proxy instead of port 80.
+  return window.location.origin;
 }
 
 // ─── SSE event parser ────────────────────────────────────────────────────────
@@ -46,6 +45,36 @@ export function parseSSEEvent(data: unknown): SSEEvent | null {
       result: obj.result,
       error: obj.error as string | undefined,
     };
+  }
+
+  // Start event — carries requestId and maxSteps for the agent loop
+  if (obj.type === "start") {
+    const data = (obj.data || {}) as Record<string, unknown>;
+    const rid = String(obj.requestId || data.requestId || obj.content || crypto.randomUUID());
+    const max = Number(obj.maxSteps || data.maxSteps || (obj.result as number) || 20);
+    return { type: "start", requestId: rid, maxSteps: max };
+  }
+
+  // Agent iteration event — backend emits before each LLM call
+  if (obj.type === "agent_iteration") {
+    const data = (obj.data || {}) as Record<string, unknown>;
+    let step = Number(obj.step || data.step || 0);
+    if (!step && typeof obj.content === "string") {
+      step = Number(obj.content) || 0;
+    }
+    const maxSteps = Number(obj.maxSteps || data.maxSteps || 20);
+    return { type: "agent_iteration", step, maxSteps };
+  }
+
+  // Agent final event — reason the loop concluded
+  if (obj.type === "agent_final") {
+    const data = (obj.data || {}) as Record<string, unknown>;
+    const raw = String(obj.reason || data.reason || obj.content || "stop");
+    const normalized: "stop" | "max_steps" | "error" =
+      raw === "max_steps" || raw === "error" || raw === "stop"
+        ? (raw as "stop" | "max_steps" | "error")
+        : "stop";
+    return { type: "agent_final", reason: normalized };
   }
 
   // Done event
@@ -93,14 +122,31 @@ export interface ChatOptions {
   message: string;
   model?: string;
   canvasContext: CanvasContext;
+  /** Conversation history up to but not including the new user message. */
+  transcript?: ChatMessage[];
   onEvent: (event: SSEEvent) => void;
+  onStart?: (requestId: string, maxSteps: number) => void;
+  onAgentIteration?: (step: number, maxSteps: number) => void;
+  onAgentFinal?: (reason: "stop" | "max_steps" | "error") => void;
   onError: (error: Error) => void;
   onComplete: () => void;
   signal?: AbortSignal;
 }
 
 export async function sendChatMessage(options: ChatOptions): Promise<void> {
-  const { message, model, canvasContext, onEvent, onError, onComplete, signal } = options;
+  const {
+    message,
+    model,
+    canvasContext,
+    transcript,
+    onEvent,
+    onStart,
+    onAgentIteration,
+    onAgentFinal,
+    onError,
+    onComplete,
+    signal,
+  } = options;
   const baseUrl = getBaseUrl();
 
   // Create timeout controller (120 seconds max for AI response)
@@ -134,6 +180,12 @@ export async function sendChatMessage(options: ChatOptions): Promise<void> {
       body: JSON.stringify({
         message,
         model: model || undefined,
+        // Full conversation history (backend folds it into the LLM transcript).
+        messages: (transcript || []).map((m) => ({
+          role: m.role,
+          content: m.content,
+          toolCallId: m.toolCalls?.[0]?.id,
+        })),
         canvasContext: {
           elements: canvasContext.elements,
           activeFileId: canvasContext.activeFileId,
@@ -231,6 +283,14 @@ export async function sendChatMessage(options: ChatOptions): Promise<void> {
           const jsonData = JSON.parse(eventData);
           const event = parseSSEEvent(jsonData);
           if (event) {
+            // Route control events to their dedicated callbacks first.
+            if (event.type === "start") {
+              onStart?.(event.requestId, event.maxSteps);
+            } else if (event.type === "agent_iteration") {
+              onAgentIteration?.(event.step, event.maxSteps);
+            } else if (event.type === "agent_final") {
+              onAgentFinal?.(event.reason);
+            }
             onEvent(event);
           }
         } catch {
@@ -298,6 +358,40 @@ export async function getActiveModel(): Promise<string> {
     return data.activeModel || "";
   } catch {
     return "";
+  }
+}
+
+// ─── Submit tool results back to the agent loop ─────────────────────────────
+
+export interface BrowserToolResult {
+  callId: string;
+  name: string;
+  success: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+/**
+ * POST tool results to /api/ai/tool-result so the backend can feed them
+ * back to the LLM and continue the agent loop.
+ *
+ * 404 (unknown/expired requestId) and 409 (loop already ended) are treated
+ * as non-fatal: the loop is gone, nothing more we can do.
+ */
+export async function submitToolResults(
+  requestId: string,
+  results: BrowserToolResult[],
+): Promise<void> {
+  const baseUrl = getBaseUrl();
+  const authHeaders = await getAuthHeadersWithRefresh();
+  const res = await fetch(`${baseUrl}/api/ai/tool-result`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders },
+    body: JSON.stringify({ requestId, results }),
+  });
+  if (!res.ok && res.status !== 404 && res.status !== 409) {
+    const text = await res.text();
+    throw new Error(`submitToolResults failed: ${res.status} ${text}`);
   }
 }
 

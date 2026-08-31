@@ -85,6 +85,13 @@ type AIConfig struct {
 	Model       string  `mapstructure:"model"`
 	MaxTokens   int     `mapstructure:"max_tokens"`
 	Temperature float64 `mapstructure:"temperature"`
+
+	// Memory plane
+	MemoryEnabled   bool   `mapstructure:"memory_enabled"`
+	EmbeddingModel  string `mapstructure:"embedding_model"`
+	SummaryModel    string `mapstructure:"summary_model"`
+	MemoryTopK      int    `mapstructure:"memory_top_k"`
+	MemoryMaxTokens int    `mapstructure:"memory_max_tokens"`
 }
 
 type LogConfig struct {
@@ -215,6 +222,13 @@ func bindEnvVars() {
 	_ = viper.BindEnv("ai.max_tokens", "EXCALIDRAW_AI_MAX_TOKENS")
 	_ = viper.BindEnv("ai.temperature", "EXCALIDRAW_AI_TEMPERATURE")
 
+	// AI memory
+	_ = viper.BindEnv("ai.memory_enabled", "EXCALIDRAW_AI_MEMORY_ENABLED")
+	_ = viper.BindEnv("ai.embedding_model", "EXCALIDRAW_AI_EMBEDDING_MODEL")
+	_ = viper.BindEnv("ai.summary_model", "EXCALIDRAW_AI_SUMMARY_MODEL")
+	_ = viper.BindEnv("ai.memory_top_k", "EXCALIDRAW_AI_MEMORY_TOP_K")
+	_ = viper.BindEnv("ai.memory_max_tokens", "EXCALIDRAW_AI_MEMORY_MAX_TOKENS")
+
 	// Log
 	_ = viper.BindEnv("log.level", "EXCALIDRAW_LOG_LEVEL")
 	_ = viper.BindEnv("log.format", "EXCALIDRAW_LOG_FORMAT")
@@ -297,6 +311,13 @@ func setDefaults() {
 	viper.SetDefault("ai.model", "gpt-4o")
 	viper.SetDefault("ai.max_tokens", 4096)
 	viper.SetDefault("ai.temperature", 0.7)
+
+	// AI memory defaults
+	viper.SetDefault("ai.memory_enabled", true)
+	viper.SetDefault("ai.embedding_model", "text-embedding-3-small")
+	viper.SetDefault("ai.summary_model", "gpt-4o-mini")
+	viper.SetDefault("ai.memory_top_k", 5)
+	viper.SetDefault("ai.memory_max_tokens", 800)
 
 	// Log defaults
 	viper.SetDefault("log.level", "info")

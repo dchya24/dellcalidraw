@@ -1,14 +1,5 @@
 FROM node:20-alpine AS builder
 
-# Build-time environment variables
-# These are injected via `docker build --build-arg VITE_API_URL=...`
-ARG VITE_API_URL
-ARG VITE_WS_URL
-
-# Expose to Vite (must be prefixed VITE_)
-ENV VITE_API_URL=${VITE_API_URL}
-ENV VITE_WS_URL=${VITE_WS_URL}
-
 WORKDIR /app
 
 COPY package*.json ./

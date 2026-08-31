@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+
+	"github.com/you/excalidraw-be/internal/ai/memory"
 	"strings"
 )
 
@@ -58,8 +60,9 @@ type openAIStreamOptions struct {
 }
 
 type openAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string `json:"role"`
+	Content    string `json:"content,omitempty"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
 }
 
 type openAITool struct {
@@ -196,8 +199,21 @@ type pendingToolCall struct {
 	Args strings.Builder
 }
 
-// ChatStream implements LLMProvider.ChatStream with proper tool call accumulation
+// ChatStreamWithMemory is like ChatStream but prepends memory entries to the system prompt.
+func (p *OpenAIProvider) ChatStreamWithMemory(ctx context.Context, messages []Message, tools []Tool, model string, mem []memory.MemoryEntry, streamFunc func(SSEEvent) error) error {
+	if len(mem) > 0 && len(messages) > 0 && messages[0].Role == "system" {
+		messages[0].Content = memory.FormatMemoryBlock(mem) + "\n" + messages[0].Content
+	}
+	return p.chatStreamImpl(ctx, messages, tools, model, streamFunc)
+}
+
+// ChatStream implements LLMProvider.ChatStream.
 func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []Message, tools []Tool, model string, streamFunc func(SSEEvent) error) error {
+	return p.ChatStreamWithMemory(ctx, messages, tools, model, nil, streamFunc)
+}
+
+// chatStreamImpl is the shared implementation.
+func (p *OpenAIProvider) chatStreamImpl(ctx context.Context, messages []Message, tools []Tool, model string, streamFunc func(SSEEvent) error) error {
 	if model == "" {
 		model = p.Model
 	}
@@ -481,8 +497,9 @@ func convertMessages(messages []Message) []openAIMessage {
 	result := make([]openAIMessage, len(messages))
 	for i, m := range messages {
 		result[i] = openAIMessage{
-			Role:    m.Role,
-			Content: m.Content,
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCallID: m.ToolCallID,
 		}
 	}
 	return result

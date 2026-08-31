@@ -9,9 +9,12 @@ function getBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl;
 
-  const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-  const host = window.location.hostname;
-  return `${protocol}//${host}:8080`;
+  // Same-origin fallback: the API is served from the same origin via a
+  // reverse proxy (e.g. Traefik routing /api -> backend). In dev that
+  // origin is the Vite dev server (VITE_PORT), whose /api proxy forwards
+  // to the backend; window.location.origin includes the dev port so the
+  // request actually reaches the proxy instead of port 80.
+  return window.location.origin;
 }
 
 class ApiService {

@@ -101,4 +101,39 @@ describe("aiService parseSSEEvent", () => {
     expect(parseSSEEvent({})).toBeNull();
     expect(parseSSEEvent({ foo: "bar" })).toBeNull();
   });
+
+  it("parses start event with requestId and maxSteps", () => {
+    const out = parseSSEEvent({ type: "start", requestId: "r1", maxSteps: 20 });
+    expect(out).toEqual({ type: "start", requestId: "r1", maxSteps: 20 });
+  });
+
+  it("parses start event from backend shape (content + result)", () => {
+    // Backend sends {type:"start", content:"<uuid>", result:20}
+    const out = parseSSEEvent({ type: "start", content: "abc-123", result: 20 });
+    expect(out?.type).toBe("start");
+    if (out?.type === "start") {
+      expect(out.requestId).toBe("abc-123");
+      expect(out.maxSteps).toBe(20);
+    }
+  });
+
+  it("parses agent_iteration event", () => {
+    const out = parseSSEEvent({ type: "agent_iteration", step: 3, maxSteps: 20 });
+    expect(out).toEqual({ type: "agent_iteration", step: 3, maxSteps: 20 });
+  });
+
+  it("parses agent_iteration from content fallback", () => {
+    const out = parseSSEEvent({ type: "agent_iteration", content: "2" });
+    expect(out).toEqual({ type: "agent_iteration", step: 2, maxSteps: 20 });
+  });
+
+  it("parses agent_final event", () => {
+    const out = parseSSEEvent({ type: "agent_final", reason: "max_steps" });
+    expect(out).toEqual({ type: "agent_final", reason: "max_steps" });
+  });
+
+  it("normalizes unknown agent_final reason to stop", () => {
+    const out = parseSSEEvent({ type: "agent_final", reason: "weird" });
+    expect(out).toEqual({ type: "agent_final", reason: "stop" });
+  });
 });

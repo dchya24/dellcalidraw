@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/you/excalidraw-be/internal/ai/memory"
 )
 
 // AnthropicProvider implements LLMProvider for Anthropic API
@@ -158,8 +160,21 @@ func (p *AnthropicProvider) Chat(ctx context.Context, messages []Message, tools 
 	return result, nil
 }
 
-// ChatStream implements LLMProvider.ChatStream for Anthropic
+// ChatStreamWithMemory is like ChatStream but prepends memory entries to the system prompt.
+func (p *AnthropicProvider) ChatStreamWithMemory(ctx context.Context, messages []Message, tools []Tool, model string, mem []memory.MemoryEntry, streamFunc func(SSEEvent) error) error {
+	if len(mem) > 0 && len(messages) > 0 && messages[0].Role == "system" {
+		messages[0].Content = memory.FormatMemoryBlock(mem) + "\n" + messages[0].Content
+	}
+	return p.chatStreamImpl(ctx, messages, tools, model, streamFunc)
+}
+
+// ChatStream implements LLMProvider.ChatStream for Anthropic.
 func (p *AnthropicProvider) ChatStream(ctx context.Context, messages []Message, tools []Tool, model string, streamFunc func(SSEEvent) error) error {
+	return p.ChatStreamWithMemory(ctx, messages, tools, model, nil, streamFunc)
+}
+
+// chatStreamImpl is the shared implementation.
+func (p *AnthropicProvider) chatStreamImpl(ctx context.Context, messages []Message, tools []Tool, model string, streamFunc func(SSEEvent) error) error {
 	if model == "" {
 		model = p.Model
 	}
@@ -395,4 +410,17 @@ func convertAnthropicTools(tools []Tool) []anthropicTool {
 		}
 	}
 	return result
+}
+
+// appendAnthropicToolResult appends a tool-result content block to a user
+// message's content array. Non-tool messages are silently ignored.
+func appendAnthropicToolResult(blocks []map[string]any, m Message) []map[string]any {
+	if m.Role != "tool" {
+		return blocks
+	}
+	return append(blocks, map[string]any{
+		"type":        "tool_result",
+		"tool_use_id": m.ToolCallID,
+		"content":     m.Content,
+	})
 }

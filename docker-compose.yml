@@ -26,6 +26,12 @@ services:
       - HOST=0.0.0.0
       - APP_ENV=${APP_ENV:-production}
 
+    # host.docker.internal -> host so the backend can reach services
+    # published on host ports (PostgreSQL, MinIO) that live outside this
+    # compose project. DB_HOST etc. point at host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
       # Database (PostgreSQL) - required, no safe default for host
       - EXCALIDRAW_DATABASE_HOST=${EXCALIDRAW_DATABASE_HOST}
       - EXCALIDRAW_DATABASE_PORT=${EXCALIDRAW_DATABASE_PORT:-5432}
@@ -85,7 +91,7 @@ services:
     networks:
       - excalidraw-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:80"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -127,6 +133,8 @@ services:
       - BACKUP_S3_PREFIX=${BACKUP_S3_PREFIX:-backups/postgres}
       - RUN_ON_START=${BACKUP_RUN_ON_START:-false}
       - TZ=${TZ:-UTC}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - excalidraw-network

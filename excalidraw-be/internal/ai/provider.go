@@ -81,7 +81,7 @@ type Message struct {
 	Role       string `json:"role"` // system, user, assistant, tool
 	Content    string `json:"content"`
 	ToolCallID string `json:"tool_call_id,omitempty"` // role=tool (OpenAI)
-	Name       string `json:"name,omitempty"`        // tool name (Anthropic)
+	Name       string `json:"name,omitempty"`         // tool name (Anthropic)
 }
 
 // Tool represents an MCP tool definition

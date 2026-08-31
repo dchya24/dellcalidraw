@@ -158,7 +158,7 @@ func main() {
 				// Reuse the auth middleware to populate context; if the request
 				// already has a user ID (set upstream), extract it directly.
 				uid, _ := r.Context().Value("userID").(string)
-				_ = authMW  // kept for documentation; identity is set above
+				_ = authMW // kept for documentation; identity is set above
 				return uid, ""
 			})
 			logger.Info("AI memory plane enabled",

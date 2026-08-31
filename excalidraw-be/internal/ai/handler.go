@@ -55,15 +55,15 @@ type ToolCallLog struct {
 
 // Handler holds AI HTTP handlers
 type Handler struct {
-	provider         LLMProvider
-	tools            []Tool
-	requestLogger    RequestLogger // nil if not in development mode
-	providerName     string
-	retriever        *memory.Retriever
-	ingester         *memory.Ingester
-	resolveIdentity  func(*http.Request) (string, string)
-	maxMemoryTokens  int
-	agentReg         *Registry
+	provider        LLMProvider
+	tools           []Tool
+	requestLogger   RequestLogger // nil if not in development mode
+	providerName    string
+	retriever       *memory.Retriever
+	ingester        *memory.Ingester
+	resolveIdentity func(*http.Request) (string, string)
+	maxMemoryTokens int
+	agentReg        *Registry
 }
 
 // NewHandler creates new AI handler
@@ -84,12 +84,12 @@ func (h *Handler) SetProviderName(name string) {
 	h.providerName = name
 }
 
-func (h *Handler) SetRetriever(r *memory.Retriever)  { h.retriever = r }
-func (h *Handler) SetIngester(i *memory.Ingester)    { h.ingester = i }
+func (h *Handler) SetRetriever(r *memory.Retriever) { h.retriever = r }
+func (h *Handler) SetIngester(i *memory.Ingester)   { h.ingester = i }
 func (h *Handler) SetIdentityResolver(f func(*http.Request) (string, string)) {
 	h.resolveIdentity = f
 }
-func (h *Handler) SetMaxMemoryTokens(n int)          { h.maxMemoryTokens = n }
+func (h *Handler) SetMaxMemoryTokens(n int)     { h.maxMemoryTokens = n }
 func (h *Handler) SetAgentRegistry(r *Registry) { h.agentReg = r }
 
 // RegisterRoutes registers AI routes

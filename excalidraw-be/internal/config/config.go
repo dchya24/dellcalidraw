@@ -87,11 +87,11 @@ type AIConfig struct {
 	Temperature float64 `mapstructure:"temperature"`
 
 	// Memory plane
-	MemoryEnabled   bool    `mapstructure:"memory_enabled"`
-	EmbeddingModel  string  `mapstructure:"embedding_model"`
-	SummaryModel    string  `mapstructure:"summary_model"`
-	MemoryTopK      int     `mapstructure:"memory_top_k"`
-	MemoryMaxTokens int     `mapstructure:"memory_max_tokens"`
+	MemoryEnabled   bool   `mapstructure:"memory_enabled"`
+	EmbeddingModel  string `mapstructure:"embedding_model"`
+	SummaryModel    string `mapstructure:"summary_model"`
+	MemoryTopK      int    `mapstructure:"memory_top_k"`
+	MemoryMaxTokens int    `mapstructure:"memory_max_tokens"`
 }
 
 type LogConfig struct {

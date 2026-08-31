@@ -3,7 +3,6 @@ package ai
 import (
 	"context"
 	"fmt"
-
 )
 
 // MaxToolCalls is the hard cap on tool-call iterations per request.
@@ -71,8 +70,6 @@ func AgentRun(ctx context.Context, state *LoopState, onFinal func(string)) error
 	// this iteration completed successfully.
 	return nil
 }
-
-
 
 // SendDone emits the final "done" SSE event. Called by the handler
 // after the last Run returns.

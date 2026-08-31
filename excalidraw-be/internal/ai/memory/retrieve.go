@@ -12,10 +12,10 @@ const approxCharsPerToken = 4
 // Retriever fetches relevant memory entries from the vector store,
 // merges results across owners, and renders them for system-prompt injection.
 type Retriever struct {
-	Repo         interface {
+	Repo interface {
 		TopK(ctx context.Context, ownerType, ownerID string, embedding []float32, k int) ([]MemoryEntry, error)
 	}
-	Embeddings   interface {
+	Embeddings interface {
 		Embed(ctx context.Context, texts []string) ([][]float32, error)
 	}
 	TopKPerOwner int
